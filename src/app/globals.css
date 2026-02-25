@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0a0a;
+  --color-foreground: #fafafa;
+  --color-card: #141414;
+  --color-card-foreground: #fafafa;
+  --color-popover: #141414;
+  --color-popover-foreground: #fafafa;
+  --color-primary: #6366f1;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #1e1e2e;
+  --color-secondary-foreground: #fafafa;
+  --color-muted: #1a1a2e;
+  --color-muted-foreground: #a1a1aa;
+  --color-accent: #1e1e2e;
+  --color-accent-foreground: #fafafa;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #27272a;
+  --color-input: #27272a;
+  --color-ring: #6366f1;
+  --color-sidebar: #0f0f0f;
+  --color-sidebar-foreground: #a1a1aa;
+  --color-sidebar-hover: #1a1a2e;
+  --color-sidebar-active: #6366f1;
+
+  --color-priority-none: #6b7280;
+  --color-priority-low: #3b82f6;
+  --color-priority-medium: #eab308;
+  --color-priority-high: #f97316;
+  --color-priority-urgent: #ef4444;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+}
+
+/* Light mode overrides */
+@media (prefers-color-scheme: light) {
+  :root:not(.dark) {
+    --color-background: #fafafa;
+    --color-foreground: #0a0a0a;
+    --color-card: #ffffff;
+    --color-card-foreground: #0a0a0a;
+    --color-popover: #ffffff;
+    --color-popover-foreground: #0a0a0a;
+    --color-secondary: #f4f4f5;
+    --color-secondary-foreground: #0a0a0a;
+    --color-muted: #f4f4f5;
+    --color-muted-foreground: #71717a;
+    --color-accent: #f4f4f5;
+    --color-accent-foreground: #0a0a0a;
+    --color-border: #e4e4e7;
+    --color-input: #e4e4e7;
+    --color-sidebar: #f8f8f8;
+    --color-sidebar-foreground: #71717a;
+    --color-sidebar-hover: #f0f0f5;
+  }
+}
+
+/* Force dark mode class */
+.dark {
+  --color-background: #0a0a0a;
+  --color-foreground: #fafafa;
+  --color-card: #141414;
+  --color-card-foreground: #fafafa;
+  --color-popover: #141414;
+  --color-popover-foreground: #fafafa;
+  --color-secondary: #1e1e2e;
+  --color-secondary-foreground: #fafafa;
+  --color-muted: #1a1a2e;
+  --color-muted-foreground: #a1a1aa;
+  --color-accent: #1e1e2e;
+  --color-accent-foreground: #fafafa;
+  --color-border: #27272a;
+  --color-input: #27272a;
+  --color-sidebar: #0f0f0f;
+  --color-sidebar-foreground: #a1a1aa;
+  --color-sidebar-hover: #1a1a2e;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+
+/* Task completion animation */
+@keyframes checkmark {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.task-complete-check {
+  animation: checkmark 0.3s ease-out forwards;
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-10px); }
+}
+
+.task-completing {
+  animation: fadeOut 0.4s ease-out 0.3s forwards;
+}
