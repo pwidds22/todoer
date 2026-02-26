@@ -8,13 +8,13 @@ import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 import { useEffect, useState } from 'react'
 import {
-  useMyShares,
+  useMyConnections,
   usePendingInvitations,
-  useSharedWithMe,
+  useConnectedWithMe,
   useInviteUser,
   useAcceptInvitation,
   useDeclineInvitation,
-  useRemoveShare,
+  useRemoveConnection,
 } from '@/hooks/useSharing'
 
 export default function SettingsPage() {
@@ -244,13 +244,13 @@ export default function SettingsPage() {
 }
 
 function SharingSection({ userEmail }: { userEmail: string }) {
-  const { data: myShares, isLoading: loadingShares } = useMyShares()
-  const { data: invitations, isLoading: loadingInvitations } = usePendingInvitations()
-  const { data: sharedWithMe } = useSharedWithMe()
+  const { data: myConnections, isLoading: loadingConnections } = useMyConnections()
+  const { data: invitations } = usePendingInvitations()
+  const { data: connectedWithMe } = useConnectedWithMe()
   const inviteUser = useInviteUser()
   const acceptInvitation = useAcceptInvitation()
   const declineInvitation = useDeclineInvitation()
-  const removeShare = useRemoveShare()
+  const removeConnection = useRemoveConnection()
   const [inviteEmail, setInviteEmail] = useState('')
   const [error, setError] = useState('')
 
@@ -261,7 +261,7 @@ function SharingSection({ userEmail }: { userEmail: string }) {
       setError("You can't invite yourself")
       return
     }
-    if (myShares?.some(s => s.shared_with_email === email)) {
+    if (myConnections?.some(s => s.shared_with_email === email)) {
       setError('Already invited this person')
       return
     }
@@ -276,10 +276,10 @@ function SharingSection({ userEmail }: { userEmail: string }) {
   return (
     <div className="bg-card border border-border rounded-lg p-4">
       <h2 className="font-medium flex items-center gap-2 mb-3">
-        <Users className="h-4 w-4" /> Sharing
+        <Users className="h-4 w-4" /> Connected People
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
-        Share your account with family members so they can view and manage your tasks, projects, and habits together.
+        Connect with family members so you can share specific projects with them. After connecting, use the &ldquo;Share&rdquo; option in any project&apos;s menu to give them access.
       </p>
 
       {/* Pending invitations for me */}
@@ -293,7 +293,7 @@ function SharingSection({ userEmail }: { userEmail: string }) {
             {invitations.map(inv => (
               <div key={inv.id} className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">
-                  Invitation from <strong className="text-foreground">{inv.shared_with_email === userEmail.toLowerCase() ? 'someone' : ''}</strong> (owner)
+                  Someone wants to connect with you
                 </span>
                 <div className="flex gap-1">
                   <button
@@ -345,33 +345,33 @@ function SharingSection({ userEmail }: { userEmail: string }) {
         {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
       </div>
 
-      {/* My shares list */}
-      {loadingShares ? (
+      {/* My connections list */}
+      {loadingConnections ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...
         </div>
-      ) : myShares && myShares.length > 0 ? (
+      ) : myConnections && myConnections.length > 0 ? (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">People I invited</p>
-          {myShares.map(share => (
-            <div key={share.id} className="flex items-center justify-between py-1.5">
+          {myConnections.map(conn => (
+            <div key={conn.id} className="flex items-center justify-between py-1.5">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary">
-                  {share.shared_with_email[0].toUpperCase()}
+                  {conn.shared_with_email[0].toUpperCase()}
                 </div>
                 <div>
-                  <p className="text-sm">{share.shared_with_email}</p>
+                  <p className="text-sm">{conn.shared_with_email}</p>
                   <p className={cn(
                     'text-xs',
-                    share.status === 'accepted' ? 'text-green-500' : share.status === 'declined' ? 'text-red-400' : 'text-muted-foreground'
+                    conn.status === 'accepted' ? 'text-green-500' : conn.status === 'declined' ? 'text-red-400' : 'text-muted-foreground'
                   )}>
-                    {share.status === 'accepted' ? 'Connected' : share.status === 'declined' ? 'Declined' : 'Pending...'}
+                    {conn.status === 'accepted' ? 'Connected' : conn.status === 'declined' ? 'Declined' : 'Pending...'}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => removeShare.mutate(share.id)}
-                disabled={removeShare.isPending}
+                onClick={() => removeConnection.mutate(conn.id)}
+                disabled={removeConnection.isPending}
                 className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
                 title="Remove"
               >
@@ -382,18 +382,18 @@ function SharingSection({ userEmail }: { userEmail: string }) {
         </div>
       ) : null}
 
-      {/* Shared with me list */}
-      {sharedWithMe && sharedWithMe.length > 0 && (
+      {/* Connected with me list */}
+      {connectedWithMe && connectedWithMe.length > 0 && (
         <div className="mt-4 pt-3 border-t border-border space-y-2">
-          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Shared with me</p>
-          {sharedWithMe.map(share => (
-            <div key={share.id} className="flex items-center gap-2 py-1.5">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Connected with me</p>
+          {connectedWithMe.map(conn => (
+            <div key={conn.id} className="flex items-center gap-2 py-1.5">
               <div className="w-7 h-7 rounded-full bg-green-500/10 flex items-center justify-center text-xs font-medium text-green-500">
                 <Check className="h-3.5 w-3.5" />
               </div>
               <div>
-                <p className="text-sm">Shared by account owner</p>
-                <p className="text-xs text-green-500">Connected</p>
+                <p className="text-sm">Connected account</p>
+                <p className="text-xs text-green-500">Active</p>
               </div>
             </div>
           ))}
@@ -401,9 +401,9 @@ function SharingSection({ userEmail }: { userEmail: string }) {
       )}
 
       {/* Empty state */}
-      {!loadingShares && (!myShares || myShares.length === 0) && (!sharedWithMe || sharedWithMe.length === 0) && (!invitations || invitations.length === 0) && (
+      {!loadingConnections && (!myConnections || myConnections.length === 0) && (!connectedWithMe || connectedWithMe.length === 0) && (!invitations || invitations.length === 0) && (
         <p className="text-xs text-muted-foreground py-1">
-          No active shares. Invite someone above to share your tasks and projects.
+          No connections yet. Invite someone above, then share specific projects with them.
         </p>
       )}
     </div>

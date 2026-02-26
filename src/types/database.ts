@@ -339,6 +339,30 @@ export type Database = {
         }
         Relationships: []
       }
+      shared_projects: {
+        Row: {
+          id: string
+          project_id: string
+          owner_id: string
+          shared_with_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          owner_id: string
+          shared_with_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          owner_id?: string
+          shared_with_id?: string
+          created_at?: string | null
+        }
+        Relationships: []
+      }
       sections: {
         Row: {
           created_at: string | null
@@ -496,6 +520,7 @@ export type Habit = Database['public']['Tables']['habits']['Row']
 export type HabitCompletion = Database['public']['Tables']['habit_completions']['Row']
 export type PomodoroSession = Database['public']['Tables']['pomodoro_sessions']['Row']
 export type ActivityLog = Database['public']['Tables']['activity_log']['Row']
+export type SharedProject = Database['public']['Tables']['shared_projects']['Row']
 
 // Task with relations
 export type TaskWithRelations = Task & {

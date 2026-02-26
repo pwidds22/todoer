@@ -5,12 +5,14 @@ import { useProject, useSections, useCreateSection, useDeleteProject } from '@/h
 import { useTasks } from '@/hooks/useTasks'
 import { TaskList } from '@/components/tasks/TaskList'
 import { QuickAdd } from '@/components/tasks/QuickAdd'
-import { Hash, Plus, Star, MoreHorizontal, Pencil, Archive, Trash2, X, AlertTriangle } from 'lucide-react'
+import { Hash, Plus, Star, MoreHorizontal, Pencil, Archive, Trash2, X, AlertTriangle, Share2, Users, Loader2, UserMinus } from 'lucide-react'
 import { useUpdateProject } from '@/hooks/useProjects'
 import { cn } from '@/lib/utils'
 import type { Project } from '@/types/database'
 import { useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useAcceptedConnections, useProjectShares, useShareProject, useUnshareProject } from '@/hooks/useSharing'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -27,7 +29,10 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const [showMenu, setShowMenu] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [showShareDialog, setShowShareDialog] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const { user } = useAuth()
+  const isOwner = project?.user_id === user?.id
 
   useEffect(() => {
     if (showSectionForm) sectionInputRef.current?.focus()
@@ -126,6 +131,14 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                 >
                   <Pencil className="h-3.5 w-3.5" /> Edit project
                 </button>
+                {isOwner && (
+                  <button
+                    onClick={() => { setShowShareDialog(true); setShowMenu(false) }}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors"
+                  >
+                    <Share2 className="h-3.5 w-3.5" /> Share project
+                  </button>
+                )}
                 <button
                   onClick={handleArchive}
                   className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors"
@@ -207,6 +220,17 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         )}
       </AnimatePresence>
 
+      {/* Share project dialog */}
+      <AnimatePresence>
+        {showShareDialog && (
+          <ShareProjectDialog
+            projectId={project.id}
+            projectName={project.name}
+            onClose={() => setShowShareDialog(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <div className="mb-4">
         <QuickAdd defaultProjectId={id} />
       </div>
@@ -281,6 +305,150 @@ const PROJECT_COLORS = [
   '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',
   '#d946ef', '#ec4899', '#f43f5e', '#78716c',
 ]
+
+function ShareProjectDialog({ projectId, projectName, onClose }: { projectId: string; projectName: string; onClose: () => void }) {
+  const { data: connections, isLoading: loadingConnections } = useAcceptedConnections()
+  const { data: projectShares, isLoading: loadingShares } = useProjectShares(projectId)
+  const shareProject = useShareProject()
+  const unshareProject = useUnshareProject()
+
+  // Filter connections to show who can be shared with (not already shared)
+  const sharedUserIds = new Set(projectShares?.map(s => s.shared_with_id) || [])
+  const availableConnections = connections?.filter(c => !sharedUserIds.has(c.other_user_id)) || []
+  const sharedConnections = connections?.filter(c => sharedUserIds.has(c.other_user_id)) || []
+
+  function handleShare(userId: string) {
+    shareProject.mutate({ projectId, sharedWithId: userId })
+  }
+
+  function handleUnshare(shareId: string) {
+    unshareProject.mutate(shareId)
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95 }}
+        animate={{ scale: 1 }}
+        exit={{ scale: 0.95 }}
+        onClick={e => e.stopPropagation()}
+        className="bg-card border border-border rounded-xl shadow-xl w-full max-w-md"
+      >
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Share2 className="h-4 w-4" /> Share &ldquo;{projectName}&rdquo;
+          </h2>
+          <button onClick={onClose} className="p-1 hover:bg-accent rounded transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          {loadingConnections || loadingShares ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4 justify-center">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+            </div>
+          ) : !connections || connections.length === 0 ? (
+            <div className="text-center py-4">
+              <Users className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">
+                No connected people yet. Go to <strong>Settings → Sharing</strong> to invite someone first.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Currently shared with */}
+              {sharedConnections.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">Shared with</p>
+                  <div className="space-y-2">
+                    {sharedConnections.map(conn => {
+                      const share = projectShares?.find(s => s.shared_with_id === conn.other_user_id)
+                      return (
+                        <div key={conn.id} className="flex items-center justify-between py-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-green-500/10 flex items-center justify-center text-xs font-medium text-green-500">
+                              {conn.other_user_email[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm">{conn.other_user_email}</p>
+                              <p className="text-xs text-green-500">Has access</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => share && handleUnshare(share.id)}
+                            disabled={unshareProject.isPending}
+                            className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
+                            title="Remove access"
+                          >
+                            <UserMinus className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Available to share with */}
+              {availableConnections.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">
+                    {sharedConnections.length > 0 ? 'Share with' : 'Connected people'}
+                  </p>
+                  <div className="space-y-2">
+                    {availableConnections.map(conn => (
+                      <div key={conn.id} className="flex items-center justify-between py-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary">
+                            {conn.other_user_email[0].toUpperCase()}
+                          </div>
+                          <p className="text-sm">{conn.other_user_email}</p>
+                        </div>
+                        <button
+                          onClick={() => handleShare(conn.other_user_id)}
+                          disabled={shareProject.isPending}
+                          className="flex items-center gap-1.5 px-2.5 py-1 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+                        >
+                          {shareProject.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Share2 className="h-3 w-3" />
+                          )}
+                          Share
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* All already shared */}
+              {availableConnections.length === 0 && sharedConnections.length > 0 && (
+                <p className="text-xs text-muted-foreground text-center py-1">
+                  Already shared with all connected people.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+        <div className="flex justify-end p-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-lg hover:bg-accent transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
 
 function EditProjectDialog({ project, onClose }: { project: Project; onClose: () => void }) {
   const updateProject = useUpdateProject()
