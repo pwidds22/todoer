@@ -12,6 +12,7 @@ import {
   X, Trash2, CalendarIcon, Clock, Flag, Hash, Tag,
   Bell, BellOff, Repeat, Plus, AlignLeft, Timer
 } from 'lucide-react'
+import { RecurrencePicker } from './RecurrencePicker'
 import type { Task } from '@/types/database'
 
 interface TaskDetailProps {
@@ -153,6 +154,16 @@ export function TaskDetail({ taskId, onClose }: TaskDetailProps) {
             />
           </div>
         </div>
+
+        {/* Recurrence */}
+        <RecurrencePicker
+          value={task.recurrence_rule || null}
+          recurrenceType={task.recurrence_type || null}
+          onChange={(rule, type) => {
+            saveField('recurrence_rule', rule)
+            saveField('recurrence_type', type)
+          }}
+        />
 
         {/* Priority */}
         <div className="flex items-center gap-3">

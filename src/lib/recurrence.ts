@@ -13,6 +13,16 @@
  *   FREQ=YEARLY;INTERVAL=N
  */
 
+const DAY_NAMES: Record<string, string> = {
+  SU: 'Sunday',
+  MO: 'Monday',
+  TU: 'Tuesday',
+  WE: 'Wednesday',
+  TH: 'Thursday',
+  FR: 'Friday',
+  SA: 'Saturday',
+}
+
 const DAY_MAP: Record<string, number> = {
   SU: 0,
   MO: 1,
@@ -192,4 +202,86 @@ export function calculateNextDueDate(
   }
 
   return nextDate
+}
+
+/**
+ * Build an RRULE string from constituent parts.
+ */
+export function buildRRule(parts: {
+  freq: string
+  interval?: number
+  byDay?: string | null
+}): string {
+  let rule = `FREQ=${parts.freq}`
+  if (parts.interval && parts.interval > 1) {
+    rule += `;INTERVAL=${parts.interval}`
+  }
+  if (parts.byDay) {
+    rule += `;BYDAY=${parts.byDay}`
+  }
+  return rule
+}
+
+/**
+ * Convert an RRULE string to a human-readable description.
+ *
+ * Examples:
+ *   "FREQ=DAILY"                -> "Every day"
+ *   "FREQ=DAILY;INTERVAL=3"    -> "Every 3 days"
+ *   "FREQ=WEEKLY"              -> "Every week"
+ *   "FREQ=WEEKLY;BYDAY=MO"    -> "Every Monday"
+ *   "FREQ=WEEKLY;INTERVAL=2"   -> "Every 2 weeks"
+ *   "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR" -> "Every 2 weeks on Friday"
+ *   "FREQ=MONTHLY"             -> "Every month"
+ *   "FREQ=MONTHLY;INTERVAL=3"  -> "Every 3 months"
+ *   "FREQ=YEARLY"              -> "Every year"
+ */
+export function describeRRule(rule: string | null | undefined): string {
+  if (!rule) return ''
+  const { freq, interval, byDay } = parseRRule(rule)
+
+  // Handle multi-day BYDAY (e.g., "MO,TU,WE,TH,FR")
+  let dayDesc: string | null = null
+  if (byDay) {
+    const dayKeys = byDay.split(',').map((d) => d.trim())
+    // Check for weekdays shorthand
+    const weekdays = ['MO', 'TU', 'WE', 'TH', 'FR']
+    if (
+      dayKeys.length === 5 &&
+      weekdays.every((d) => dayKeys.includes(d))
+    ) {
+      dayDesc = 'weekday'
+    } else if (dayKeys.length === 1) {
+      dayDesc = DAY_NAMES[dayKeys[0]] || dayKeys[0]
+    } else {
+      dayDesc = dayKeys.map((d) => DAY_NAMES[d] || d).join(', ')
+    }
+  }
+
+  switch (freq) {
+    case 'DAILY':
+      if (interval === 1) return 'Every day'
+      return `Every ${interval} days`
+
+    case 'WEEKLY':
+      if (dayDesc === 'weekday') {
+        return interval === 1 ? 'Every weekday' : `Every ${interval} weeks on weekdays`
+      }
+      if (interval === 1) {
+        return dayDesc ? `Every ${dayDesc}` : 'Every week'
+      }
+      const base = `Every ${interval} weeks`
+      return dayDesc ? `${base} on ${dayDesc}` : base
+
+    case 'MONTHLY':
+      if (interval === 1) return 'Every month'
+      return `Every ${interval} months`
+
+    case 'YEARLY':
+      if (interval === 1) return 'Every year'
+      return `Every ${interval} years`
+
+    default:
+      return rule
+  }
 }

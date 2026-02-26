@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useProjects } from '@/hooks/useProjects'
 import { useLabels } from '@/hooks/useLabels'
 import { parseTaskInput } from '@/lib/nlp'
+import { describeRRule } from '@/lib/recurrence'
 import { Plus, Send } from 'lucide-react'
 import { cn, PRIORITY_COLORS } from '@/lib/utils'
 
@@ -133,14 +134,14 @@ export function QuickAdd({ defaultProjectId, defaultSectionId }: QuickAddProps) 
             <span key={l}>@{l}</span>
           ))}
           {preview.recurrence && (
-            <span>🔁 {preview.recurrence}</span>
+            <span>🔁 {describeRRule(preview.recurrence)}</span>
           )}
         </div>
       )}
 
       <div className="px-3 py-1.5 border-t border-border flex justify-between items-center">
         <span className="text-xs text-muted-foreground">
-          Use # for project, @ for label, p1-p4 for priority
+          # project, @ label, p1-p4, &quot;every day/week/monday&quot;
         </span>
         <button
           type="button"

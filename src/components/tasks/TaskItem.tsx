@@ -1,6 +1,7 @@
 'use client'
 
 import { cn, formatDueDate, isOverdue, PRIORITY_COLORS } from '@/lib/utils'
+import { describeRRule } from '@/lib/recurrence'
 import { TaskCheckbox } from './TaskCheckbox'
 import { useCompleteTask } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/ui-store'
@@ -67,8 +68,9 @@ export function TaskItem({ task }: TaskItemProps) {
           )}
 
           {task.recurrence_rule && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 text-xs text-blue-400">
               <Repeat className="h-3 w-3" />
+              {describeRRule(task.recurrence_rule)}
             </span>
           )}
 
