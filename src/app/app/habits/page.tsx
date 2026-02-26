@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
+  Clock,
 } from 'lucide-react'
 import {
   format,
@@ -143,7 +144,7 @@ function useHabitCompletions(habitIds: string[], startDate: string, endDate: str
 function useCreateHabit() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (habit: { name: string; color: string; frequency_type: string; frequency_days?: number[] | null; target_count: number }) => {
+    mutationFn: async (habit: { name: string; color: string; frequency_type: string; frequency_days?: number[] | null; target_count: number; reminder_time?: string | null }) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
       const { data, error } = await supabase
@@ -240,6 +241,7 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
   const [color, setColor] = useState(HABIT_COLORS[0])
   const [frequency, setFrequency] = useState<FrequencyType>('daily')
   const [customDays, setCustomDays] = useState<number[]>([])
+  const [scheduledTime, setScheduledTime] = useState('')
   const createHabit = useCreateHabit()
 
   const toggleDay = (dayIndex: number) => {
@@ -259,6 +261,7 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
         frequency_type: frequency,
         frequency_days: frequency === 'custom' ? customDays : frequency === 'weekdays' ? [1, 2, 3, 4, 5] : null,
         target_count: 1,
+        reminder_time: scheduledTime || null,
       },
       { onSuccess: () => onClose() }
     )
@@ -388,6 +391,29 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
             )}
           </AnimatePresence>
 
+          {/* Scheduled Time */}
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1.5">Scheduled Time (optional)</label>
+            <div className="relative">
+              <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+              <input
+                type="time"
+                value={scheduledTime}
+                onChange={(e) => setScheduledTime(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg pl-9 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [&::-webkit-calendar-picker-indicator]:invert"
+              />
+            </div>
+            {scheduledTime && (
+              <button
+                type="button"
+                onClick={() => setScheduledTime('')}
+                className="text-xs text-zinc-500 hover:text-zinc-300 mt-1"
+              >
+                Clear time
+              </button>
+            )}
+          </div>
+
           {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button
@@ -443,6 +469,17 @@ function HabitRow({
           <span className="text-[11px] text-zinc-500 shrink-0 bg-zinc-800 px-2 py-0.5 rounded-full">
             {getFrequencyDescription(habit.frequency_type, habit.frequency_days)}
           </span>
+          {habit.reminder_time && (
+            <span className="flex items-center gap-1 text-[11px] text-zinc-500 shrink-0">
+              <Clock className="h-3 w-3" />
+              {(() => {
+                const [h, m] = habit.reminder_time.split(':').map(Number)
+                const ampm = h >= 12 ? 'PM' : 'AM'
+                const h12 = h % 12 || 12
+                return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+              })()}
+            </span>
+          )}
           {streak > 0 && (
             <span className="flex items-center gap-1 text-xs text-orange-400 shrink-0">
               <Flame className="h-3 w-3" />

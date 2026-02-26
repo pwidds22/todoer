@@ -7,7 +7,7 @@ import { QuickAdd } from '@/components/tasks/QuickAdd'
 import { createClient } from '@/lib/supabase/client'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, startOfDay, subDays } from 'date-fns'
-import { Sun, Repeat, Check, Flame, ArrowRight } from 'lucide-react'
+import { Sun, Repeat, Check, Flame, ArrowRight, Clock } from 'lucide-react'
 import Link from 'next/link'
 
 const supabase = createClient()
@@ -19,6 +19,7 @@ interface Habit {
   name: string
   color: string | null
   frequency_type: string | null
+  reminder_time: string | null
   is_archived: boolean | null
   created_at: string | null
 }
@@ -151,10 +152,23 @@ function TodayHabitRow({
         style={{ backgroundColor: habitColor }}
       />
 
-      {/* Habit name */}
-      <span className={`flex-1 text-sm ${isCompleted ? 'text-zinc-500 line-through' : 'text-zinc-200'}`}>
-        {habit.name}
-      </span>
+      {/* Habit name + time */}
+      <div className="flex-1 min-w-0">
+        <span className={`text-sm ${isCompleted ? 'text-zinc-500 line-through' : 'text-zinc-200'}`}>
+          {habit.name}
+        </span>
+        {habit.reminder_time && (
+          <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-zinc-500">
+            <Clock className="h-3 w-3" />
+            {(() => {
+              const [h, m] = habit.reminder_time.split(':').map(Number)
+              const ampm = h >= 12 ? 'PM' : 'AM'
+              const h12 = h % 12 || 12
+              return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+            })()}
+          </span>
+        )}
+      </div>
 
       {/* Streak */}
       {streak > 0 && (
