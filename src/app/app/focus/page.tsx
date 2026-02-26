@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTasks } from '@/hooks/useTasks'
-import { Timer, Play, Pause, RotateCcw, Coffee, Target, ChevronDown, Check, X } from 'lucide-react'
+import { Timer, Play, Pause, RotateCcw, Coffee, Target, ChevronDown, Check, X, Settings } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 // --- Types ---
@@ -16,15 +16,56 @@ interface SessionConfig {
   icon: React.ReactNode
 }
 
+interface FocusSettings {
+  focusMinutes: number
+  shortBreakMinutes: number
+  longBreakMinutes: number
+  longBreakInterval: number
+  autoStartBreaks: boolean
+  autoStartFocus: boolean
+}
+
 // --- Constants ---
 
-const SESSION_CONFIGS: Record<SessionType, SessionConfig> = {
-  focus: { label: 'Focus', minutes: 25, color: '#7c3aed', icon: <Target className="h-4 w-4" /> },
-  shortBreak: { label: 'Short Break', minutes: 5, color: '#22c55e', icon: <Coffee className="h-4 w-4" /> },
-  longBreak: { label: 'Long Break', minutes: 15, color: '#3b82f6', icon: <Coffee className="h-4 w-4" /> },
+const DEFAULT_SETTINGS: FocusSettings = {
+  focusMinutes: 25,
+  shortBreakMinutes: 5,
+  longBreakMinutes: 15,
+  longBreakInterval: 4,
+  autoStartBreaks: false,
+  autoStartFocus: false,
 }
 
 const STORAGE_KEY = 'todoer-focus-sessions'
+const STORAGE_SETTINGS_KEY = 'todoer-focus-settings'
+
+function loadSettings(): FocusSettings {
+  try {
+    const raw = localStorage.getItem(STORAGE_SETTINGS_KEY)
+    if (!raw) return DEFAULT_SETTINGS
+    const parsed = JSON.parse(raw)
+    return { ...DEFAULT_SETTINGS, ...parsed }
+  } catch {
+    return DEFAULT_SETTINGS
+  }
+}
+
+function saveSettings(settings: FocusSettings) {
+  try {
+    localStorage.setItem(STORAGE_SETTINGS_KEY, JSON.stringify(settings))
+  } catch {
+    // localStorage not available
+  }
+}
+
+function buildSessionConfigs(settings: FocusSettings): Record<SessionType, SessionConfig> {
+  return {
+    focus: { label: 'Focus', minutes: settings.focusMinutes, color: '#7c3aed', icon: <Target className="h-4 w-4" /> },
+    shortBreak: { label: 'Short Break', minutes: settings.shortBreakMinutes, color: '#22c55e', icon: <Coffee className="h-4 w-4" /> },
+    longBreak: { label: 'Long Break', minutes: settings.longBreakMinutes, color: '#3b82f6', icon: <Coffee className="h-4 w-4" /> },
+  }
+}
+
 const CIRCLE_RADIUS = 120
 const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS
 
@@ -92,9 +133,16 @@ function incrementTodaySessions(): number {
 export default function FocusPage() {
   const { data: tasks, isLoading } = useTasks({ isCompleted: false })
 
+  // Settings state
+  const [settings, setSettings] = useState<FocusSettings>(DEFAULT_SETTINGS)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [pendingSettings, setPendingSettings] = useState<FocusSettings>(DEFAULT_SETTINGS)
+
+  const sessionConfigs = useMemo(() => buildSessionConfigs(settings), [settings])
+
   // Timer state
   const [sessionType, setSessionType] = useState<SessionType>('focus')
-  const [timeLeft, setTimeLeft] = useState(SESSION_CONFIGS.focus.minutes * 60)
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_SETTINGS.focusMinutes * 60)
   const [isRunning, setIsRunning] = useState(false)
   const [completedSessions, setCompletedSessions] = useState(0)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
@@ -103,8 +151,9 @@ export default function FocusPage() {
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const settingsPanelRef = useRef<HTMLDivElement>(null)
 
-  const totalSeconds = SESSION_CONFIGS[sessionType].minutes * 60
+  const totalSeconds = sessionConfigs[sessionType].minutes * 60
   const progress = (totalSeconds - timeLeft) / totalSeconds
   const dashOffset = CIRCLE_CIRCUMFERENCE * (1 - progress)
 
@@ -112,12 +161,16 @@ export default function FocusPage() {
   const seconds = timeLeft % 60
   const displayTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 
-  const activeColor = SESSION_CONFIGS[sessionType].color
+  const activeColor = sessionConfigs[sessionType].color
 
   const selectedTask = tasks?.find(t => t.id === selectedTaskId)
 
-  // Load sessions from localStorage on mount
+  // Load settings and sessions from localStorage on mount
   useEffect(() => {
+    const stored = loadSettings()
+    setSettings(stored)
+    setPendingSettings(stored)
+    setTimeLeft(stored.focusMinutes * 60)
     setCompletedSessions(getTodaySessions())
   }, [])
 
@@ -131,6 +184,41 @@ export default function FocusPage() {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Close settings panel on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (settingsPanelRef.current && !settingsPanelRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false)
+      }
+    }
+    if (settingsOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [settingsOpen])
+
+  // Apply settings changes
+  function applySettings(newSettings: FocusSettings) {
+    setSettings(newSettings)
+    saveSettings(newSettings)
+    // If the timer is not running, update timeLeft to reflect new durations
+    if (!isRunning) {
+      const configs = buildSessionConfigs(newSettings)
+      setTimeLeft(configs[sessionType].minutes * 60)
+    }
+  }
+
+  function handleResetDefaults() {
+    setPendingSettings(DEFAULT_SETTINGS)
+    applySettings(DEFAULT_SETTINGS)
+  }
+
+  function handleSettingChange<K extends keyof FocusSettings>(key: K, value: FocusSettings[K]) {
+    const updated = { ...pendingSettings, [key]: value }
+    setPendingSettings(updated)
+    applySettings(updated)
+  }
 
   // Timer countdown
   useEffect(() => {
@@ -165,12 +253,12 @@ export default function FocusPage() {
   // Update document title with timer
   useEffect(() => {
     if (isRunning) {
-      document.title = `${displayTime} - ${SESSION_CONFIGS[sessionType].label} | Todoer`
+      document.title = `${displayTime} - ${sessionConfigs[sessionType].label} | Todoer`
     } else {
       document.title = 'Focus | Todoer'
     }
     return () => { document.title = 'Todoer' }
-  }, [displayTime, isRunning, sessionType])
+  }, [displayTime, isRunning, sessionType, sessionConfigs])
 
   const handleSessionComplete = useCallback(() => {
     playCompletionSound()
@@ -181,21 +269,29 @@ export default function FocusPage() {
       const newCount = incrementTodaySessions()
       setCompletedSessions(newCount)
 
-      // After 4 focus sessions, suggest long break; otherwise short break
-      if (newCount % 4 === 0) {
-        switchSession('longBreak')
-      } else {
-        switchSession('shortBreak')
+      // After N focus sessions (from settings), suggest long break; otherwise short break
+      const nextType = newCount % settings.longBreakInterval === 0 ? 'longBreak' : 'shortBreak'
+      switchSession(nextType)
+
+      // Auto-start breaks if enabled
+      if (settings.autoStartBreaks) {
+        setTimeout(() => setIsRunning(true), 500)
       }
     } else {
       // After a break, go back to focus
       switchSession('focus')
+
+      // Auto-start focus if enabled
+      if (settings.autoStartFocus) {
+        setTimeout(() => setIsRunning(true), 500)
+      }
     }
-  }, [sessionType])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionType, settings])
 
   function switchSession(type: SessionType) {
     setSessionType(type)
-    setTimeLeft(SESSION_CONFIGS[type].minutes * 60)
+    setTimeLeft(sessionConfigs[type].minutes * 60)
     setIsRunning(false)
   }
 
@@ -205,7 +301,7 @@ export default function FocusPage() {
 
   function resetTimer() {
     setIsRunning(false)
-    setTimeLeft(SESSION_CONFIGS[sessionType].minutes * 60)
+    setTimeLeft(sessionConfigs[sessionType].minutes * 60)
   }
 
   function selectTask(taskId: string | null) {
@@ -226,20 +322,193 @@ export default function FocusPage() {
   return (
     <div className="max-w-3xl mx-auto p-6">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-8 relative">
         <div className="flex items-center gap-3 mb-1">
           <Timer className="h-6 w-6 text-purple-500" />
           <h1 className="text-2xl font-bold">Focus</h1>
+          <button
+            onClick={() => {
+              setPendingSettings(settings)
+              setSettingsOpen(prev => !prev)
+            }}
+            className="ml-auto p-2 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+            title="Timer settings"
+          >
+            <Settings className="h-5 w-5" />
+          </button>
         </div>
         <p className="text-sm text-muted-foreground ml-9">
           Stay focused with the Pomodoro technique
         </p>
+
+        {/* Settings Panel */}
+        <AnimatePresence>
+          {settingsOpen && (
+            <motion.div
+              ref={settingsPanelRef}
+              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.96 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              className="absolute right-0 top-full mt-2 z-50 w-80 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden"
+            >
+              {/* Panel header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/50">
+                <h3 className="text-sm font-semibold text-zinc-200">Timer Settings</h3>
+                <button
+                  onClick={() => setSettingsOpen(false)}
+                  className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Panel body */}
+              <div className="p-4 space-y-5">
+                {/* Focus duration */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Focus Duration</label>
+                    <span className="text-sm font-mono text-purple-400">{pendingSettings.focusMinutes} min</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={60}
+                    value={pendingSettings.focusMinutes}
+                    onChange={(e) => handleSettingChange('focusMinutes', Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-zinc-700 accent-purple-500
+                      [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer
+                      [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-purple-500 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-zinc-600 mt-0.5">
+                    <span>1</span>
+                    <span>60</span>
+                  </div>
+                </div>
+
+                {/* Short break duration */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Short Break</label>
+                    <span className="text-sm font-mono text-green-400">{pendingSettings.shortBreakMinutes} min</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={30}
+                    value={pendingSettings.shortBreakMinutes}
+                    onChange={(e) => handleSettingChange('shortBreakMinutes', Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-zinc-700 accent-green-500
+                      [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-500 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer
+                      [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-green-500 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-zinc-600 mt-0.5">
+                    <span>1</span>
+                    <span>30</span>
+                  </div>
+                </div>
+
+                {/* Long break duration */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Long Break</label>
+                    <span className="text-sm font-mono text-blue-400">{pendingSettings.longBreakMinutes} min</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={60}
+                    value={pendingSettings.longBreakMinutes}
+                    onChange={(e) => handleSettingChange('longBreakMinutes', Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-zinc-700 accent-blue-500
+                      [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer
+                      [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-blue-500 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-zinc-600 mt-0.5">
+                    <span>1</span>
+                    <span>60</span>
+                  </div>
+                </div>
+
+                {/* Long break interval */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Long Break Every</label>
+                    <span className="text-sm font-mono text-zinc-300">{pendingSettings.longBreakInterval} sessions</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={2}
+                    max={10}
+                    value={pendingSettings.longBreakInterval}
+                    onChange={(e) => handleSettingChange('longBreakInterval', Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-zinc-700 accent-purple-500
+                      [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer
+                      [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-purple-500 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-zinc-600 mt-0.5">
+                    <span>2</span>
+                    <span>10</span>
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div className="border-t border-zinc-700/50" />
+
+                {/* Auto-start breaks */}
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-zinc-300">Auto-start breaks</label>
+                  <button
+                    onClick={() => handleSettingChange('autoStartBreaks', !pendingSettings.autoStartBreaks)}
+                    className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 ${
+                      pendingSettings.autoStartBreaks ? 'bg-purple-500' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <motion.div
+                      className="absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow-sm"
+                      animate={{ x: pendingSettings.autoStartBreaks ? 18 : 0 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    />
+                  </button>
+                </div>
+
+                {/* Auto-start focus */}
+                <div className="flex items-center justify-between">
+                  <label className="text-sm text-zinc-300">Auto-start focus</label>
+                  <button
+                    onClick={() => handleSettingChange('autoStartFocus', !pendingSettings.autoStartFocus)}
+                    className={`relative w-10 h-[22px] rounded-full transition-colors duration-200 ${
+                      pendingSettings.autoStartFocus ? 'bg-purple-500' : 'bg-zinc-700'
+                    }`}
+                  >
+                    <motion.div
+                      className="absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow-sm"
+                      animate={{ x: pendingSettings.autoStartFocus ? 18 : 0 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Panel footer */}
+              <div className="px-4 py-3 border-t border-zinc-700/50">
+                <button
+                  onClick={handleResetDefaults}
+                  className="w-full text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 py-2 rounded-lg transition-colors"
+                >
+                  Reset to defaults
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Session type toggle */}
       <div className="flex justify-center mb-8">
         <div className="inline-flex bg-zinc-800/60 rounded-xl p-1 gap-1">
-          {(Object.keys(SESSION_CONFIGS) as SessionType[]).map(type => (
+          {(Object.keys(sessionConfigs) as SessionType[]).map(type => (
             <button
               key={type}
               onClick={() => {
@@ -251,8 +520,8 @@ export default function FocusPage() {
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50'
               } ${isRunning && sessionType !== type ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
             >
-              {SESSION_CONFIGS[type].icon}
-              {SESSION_CONFIGS[type].label}
+              {sessionConfigs[type].icon}
+              {sessionConfigs[type].label}
             </button>
           ))}
         </div>
@@ -308,7 +577,7 @@ export default function FocusPage() {
               </motion.span>
             </AnimatePresence>
             <span className="text-sm text-zinc-400 mt-1">
-              {SESSION_CONFIGS[sessionType].label}
+              {sessionConfigs[sessionType].label}
             </span>
           </div>
         </motion.div>

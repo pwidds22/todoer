@@ -197,7 +197,7 @@ export function TaskDetail({ taskId, onClose }: TaskDetailProps) {
             <select
               value={task.project_id || ''}
               onChange={(e) => saveField('project_id', e.target.value || null)}
-              className="w-full text-sm bg-transparent focus:outline-none mt-0.5"
+              className="w-full text-sm bg-accent/50 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary/50 mt-0.5 [&>option]:bg-card [&>option]:text-foreground"
             >
               <option value="">Inbox</option>
               {projects?.map((p) => (
@@ -243,7 +243,7 @@ export function TaskDetail({ taskId, onClose }: TaskDetailProps) {
             <select
               value={task.nag_interval || 60}
               onChange={(e) => saveField('nag_interval', parseInt(e.target.value))}
-              className="w-full text-sm bg-transparent focus:outline-none mt-0.5"
+              className="w-full text-sm bg-accent/50 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary/50 mt-0.5 [&>option]:bg-card [&>option]:text-foreground"
             >
               <option value={30}>Every 30 seconds</option>
               <option value={60}>Every 1 minute</option>

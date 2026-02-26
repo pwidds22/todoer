@@ -31,7 +31,24 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            try {
+              var stored = JSON.parse(localStorage.getItem('todoer-ui') || '{}');
+              var theme = (stored.state && stored.state.theme) || 'dark';
+              var root = document.documentElement;
+              if (theme === 'system') {
+                var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                root.className = prefersDark ? 'dark' : 'light';
+              } else {
+                root.className = theme;
+              }
+            } catch(e) { document.documentElement.className = 'dark'; }
+          })();
+        `}} />
+      </head>
       <body className="bg-background text-foreground antialiased">
         <ServiceWorkerRegistration />
         <Providers>{children}</Providers>

@@ -13,20 +13,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Apply theme class to <html> and persist
   useEffect(() => {
     const root = document.documentElement
+    root.classList.remove('dark', 'light')
     if (theme === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      root.classList.toggle('dark', prefersDark)
-      root.classList.toggle('light', !prefersDark)
+      root.classList.add(prefersDark ? 'dark' : 'light')
 
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
       const handler = (e: MediaQueryListEvent) => {
-        root.classList.toggle('dark', e.matches)
-        root.classList.toggle('light', !e.matches)
+        root.classList.remove('dark', 'light')
+        root.classList.add(e.matches ? 'dark' : 'light')
       }
       mediaQuery.addEventListener('change', handler)
       return () => mediaQuery.removeEventListener('change', handler)
     } else {
-      root.classList.remove('light', 'dark')
       root.classList.add(theme)
     }
   }, [theme])

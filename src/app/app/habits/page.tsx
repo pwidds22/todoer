@@ -59,6 +59,53 @@ const HABIT_COLORS = [
   '#ec4899', '#f59e0b', '#ef4444', '#6366f1',
 ]
 
+// ---------- frequency types ----------
+type FrequencyType = 'daily' | 'every_other_day' | 'weekly' | 'biweekly' | 'monthly' | 'weekdays' | 'custom'
+
+const FREQUENCY_OPTIONS: { value: FrequencyType; label: string; description: string }[] = [
+  { value: 'daily', label: 'Daily', description: 'Every day' },
+  { value: 'every_other_day', label: 'Every Other Day', description: 'Every 2 days' },
+  { value: 'weekly', label: 'Weekly', description: 'Once a week' },
+  { value: 'biweekly', label: 'Biweekly', description: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Monthly', description: 'Once a month' },
+  { value: 'weekdays', label: 'Weekdays', description: 'Mon through Fri' },
+  { value: 'custom', label: 'Custom', description: 'Pick specific days' },
+]
+
+const DAY_LABELS = [
+  { index: 0, short: 'S', name: 'Sun' },
+  { index: 1, short: 'M', name: 'Mon' },
+  { index: 2, short: 'T', name: 'Tue' },
+  { index: 3, short: 'W', name: 'Wed' },
+  { index: 4, short: 'T', name: 'Thu' },
+  { index: 5, short: 'F', name: 'Fri' },
+  { index: 6, short: 'S', name: 'Sat' },
+]
+
+function getFrequencyDescription(frequencyType: string | null, frequencyDays: number[] | null): string {
+  switch (frequencyType) {
+    case 'daily':
+      return 'Daily'
+    case 'every_other_day':
+      return 'Every other day'
+    case 'weekly':
+      return 'Weekly'
+    case 'biweekly':
+      return 'Biweekly'
+    case 'monthly':
+      return 'Monthly'
+    case 'weekdays':
+      return 'Mon\u2013Fri'
+    case 'custom': {
+      if (!frequencyDays || frequencyDays.length === 0) return 'Custom'
+      const sorted = [...frequencyDays].sort((a, b) => a - b)
+      return sorted.map((d) => DAY_LABELS[d]?.name || '').join(', ')
+    }
+    default:
+      return frequencyType || ''
+  }
+}
+
 // ---------- hooks ----------
 function useHabits() {
   return useQuery({
@@ -96,7 +143,7 @@ function useHabitCompletions(habitIds: string[], startDate: string, endDate: str
 function useCreateHabit() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (habit: { name: string; color: string; frequency_type: string; target_count: number }) => {
+    mutationFn: async (habit: { name: string; color: string; frequency_type: string; frequency_days?: number[] | null; target_count: number }) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
       const { data, error } = await supabase
@@ -191,14 +238,28 @@ function calculateStreak(completions: HabitCompletion[], habitId: string): numbe
 function CreateHabitDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('')
   const [color, setColor] = useState(HABIT_COLORS[0])
-  const [frequency, setFrequency] = useState<'daily' | 'weekly'>('daily')
+  const [frequency, setFrequency] = useState<FrequencyType>('daily')
+  const [customDays, setCustomDays] = useState<number[]>([])
   const createHabit = useCreateHabit()
+
+  const toggleDay = (dayIndex: number) => {
+    setCustomDays((prev) =>
+      prev.includes(dayIndex) ? prev.filter((d) => d !== dayIndex) : [...prev, dayIndex]
+    )
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
+    if (frequency === 'custom' && customDays.length === 0) return
     createHabit.mutate(
-      { name: name.trim(), color, frequency_type: frequency, target_count: 1 },
+      {
+        name: name.trim(),
+        color,
+        frequency_type: frequency,
+        frequency_days: frequency === 'custom' ? customDays : frequency === 'weekdays' ? [1, 2, 3, 4, 5] : null,
+        target_count: 1,
+      },
       { onSuccess: () => onClose() }
     )
   }
@@ -216,7 +277,7 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-md"
+        className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-zinc-100">New Habit</h2>
@@ -225,6 +286,7 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Name */}
           <div>
             <label className="block text-sm text-zinc-400 mb-1.5">Name</label>
             <input
@@ -236,6 +298,7 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
 
+          {/* Color */}
           <div>
             <label className="block text-sm text-zinc-400 mb-1.5">Color</label>
             <div className="flex gap-2">
@@ -253,26 +316,79 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
+          {/* Frequency */}
           <div>
             <label className="block text-sm text-zinc-400 mb-1.5">Frequency</label>
-            <div className="flex gap-2">
-              {(['daily', 'weekly'] as const).map((f) => (
+            <div className="grid grid-cols-3 gap-2">
+              {FREQUENCY_OPTIONS.map((opt) => (
                 <button
-                  key={f}
+                  key={opt.value}
                   type="button"
-                  onClick={() => setFrequency(f)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                    frequency === f
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
+                  onClick={() => {
+                    setFrequency(opt.value)
+                    if (opt.value !== 'custom') setCustomDays([])
+                  }}
+                  className={`py-2 px-2 rounded-lg text-sm font-medium transition-all text-center ${
+                    frequency === opt.value
+                      ? 'bg-emerald-600 text-white ring-1 ring-emerald-500'
+                      : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300'
                   }`}
                 >
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                  {opt.label}
                 </button>
               ))}
             </div>
+            {/* Description of selected frequency */}
+            <p className="text-xs text-zinc-500 mt-2">
+              {FREQUENCY_OPTIONS.find((o) => o.value === frequency)?.description}
+            </p>
           </div>
 
+          {/* Custom day picker */}
+          <AnimatePresence>
+            {frequency === 'custom' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-2">Select days</label>
+                  <div className="flex gap-2 justify-between">
+                    {DAY_LABELS.map((day) => (
+                      <button
+                        key={day.index}
+                        type="button"
+                        onClick={() => toggleDay(day.index)}
+                        title={day.name}
+                        className={`w-9 h-9 rounded-full text-xs font-semibold transition-all flex items-center justify-center ${
+                          customDays.includes(day.index)
+                            ? 'bg-emerald-600 text-white ring-1 ring-emerald-400'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300 border border-zinc-700'
+                        }`}
+                      >
+                        {day.short}
+                      </button>
+                    ))}
+                  </div>
+                  {customDays.length > 0 && (
+                    <p className="text-xs text-emerald-400/80 mt-2">
+                      {[...customDays].sort((a, b) => a - b).map((d) => DAY_LABELS[d]?.name).join(', ')}
+                    </p>
+                  )}
+                  {customDays.length === 0 && (
+                    <p className="text-xs text-amber-400/80 mt-2">
+                      Pick at least one day
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"
@@ -283,7 +399,7 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || createHabit.isPending}
+              disabled={!name.trim() || createHabit.isPending || (frequency === 'custom' && customDays.length === 0)}
               className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 transition-colors disabled:opacity-50"
             >
               {createHabit.isPending ? 'Creating...' : 'Create Habit'}
@@ -324,6 +440,9 @@ function HabitRow({
             style={{ backgroundColor: habitColor }}
           />
           <span className="text-sm font-medium text-zinc-200 truncate">{habit.name}</span>
+          <span className="text-[11px] text-zinc-500 shrink-0 bg-zinc-800 px-2 py-0.5 rounded-full">
+            {getFrequencyDescription(habit.frequency_type, habit.frequency_days)}
+          </span>
           {streak > 0 && (
             <span className="flex items-center gap-1 text-xs text-orange-400 shrink-0">
               <Flame className="h-3 w-3" />

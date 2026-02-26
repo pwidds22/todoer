@@ -9,6 +9,7 @@
  *   FREQ=WEEKLY;INTERVAL=N
  *   FREQ=MONTHLY
  *   FREQ=MONTHLY;INTERVAL=N
+ *   FREQ=MONTHLY;BYMONTHDAY=N (specific day of month, 1-31)
  *   FREQ=YEARLY
  *   FREQ=YEARLY;INTERVAL=N
  */
@@ -37,15 +38,33 @@ interface RRuleParts {
   freq: string
   interval: number
   byDay: string | null
+  byMonthDay: number | null
+}
+
+/**
+ * Convert a number to its ordinal string (1st, 2nd, 3rd, 4th, ... 21st, 22nd, etc.)
+ */
+export function ordinalSuffix(n: number): string {
+  const mod100 = n % 100
+  if (mod100 >= 11 && mod100 <= 13) {
+    return `${n}th`
+  }
+  switch (n % 10) {
+    case 1: return `${n}st`
+    case 2: return `${n}nd`
+    case 3: return `${n}rd`
+    default: return `${n}th`
+  }
 }
 
 /**
  * Parse an RRULE string into its constituent parts.
  *
  * Examples:
- *   "FREQ=DAILY"               -> { freq: "DAILY", interval: 1, byDay: null }
- *   "FREQ=WEEKLY;BYDAY=MO"    -> { freq: "WEEKLY", interval: 1, byDay: "MO" }
- *   "FREQ=MONTHLY;INTERVAL=2" -> { freq: "MONTHLY", interval: 2, byDay: null }
+ *   "FREQ=DAILY"                        -> { freq: "DAILY", interval: 1, byDay: null, byMonthDay: null }
+ *   "FREQ=WEEKLY;BYDAY=MO"             -> { freq: "WEEKLY", interval: 1, byDay: "MO", byMonthDay: null }
+ *   "FREQ=MONTHLY;INTERVAL=2"          -> { freq: "MONTHLY", interval: 2, byDay: null, byMonthDay: null }
+ *   "FREQ=MONTHLY;BYMONTHDAY=1"        -> { freq: "MONTHLY", interval: 1, byDay: null, byMonthDay: 1 }
  */
 export function parseRRule(rule: string): RRuleParts {
   const parts: Record<string, string> = {}
@@ -60,6 +79,7 @@ export function parseRRule(rule: string): RRuleParts {
     freq: parts.FREQ || 'DAILY',
     interval: parts.INTERVAL ? parseInt(parts.INTERVAL, 10) : 1,
     byDay: parts.BYDAY || null,
+    byMonthDay: parts.BYMONTHDAY ? parseInt(parts.BYMONTHDAY, 10) : null,
   }
 }
 
@@ -74,7 +94,7 @@ export function getNextOccurrence(
   recurrenceRule: string,
   currentDueDate: string
 ): string {
-  const { freq, interval, byDay } = parseRRule(recurrenceRule)
+  const { freq, interval, byDay, byMonthDay } = parseRRule(recurrenceRule)
 
   // Parse the current due date into year/month/day components to avoid
   // timezone issues. We work entirely in date-only (no time) space.
@@ -116,14 +136,14 @@ export function getNextOccurrence(
       // Advance by interval months, clamping to the last day of the
       // target month if the original day exceeds it (e.g., Jan 31 + 1
       // month = Feb 28/29).
-      const originalDay = date.getDate()
+      const targetDayOfMonth = byMonthDay ?? date.getDate()
       date.setMonth(date.getMonth() + interval, 1)
       const daysInTargetMonth = new Date(
         date.getFullYear(),
         date.getMonth() + 1,
         0
       ).getDate()
-      date.setDate(Math.min(originalDay, daysInTargetMonth))
+      date.setDate(Math.min(targetDayOfMonth, daysInTargetMonth))
       break
     }
 
@@ -211,6 +231,7 @@ export function buildRRule(parts: {
   freq: string
   interval?: number
   byDay?: string | null
+  byMonthDay?: number | null
 }): string {
   let rule = `FREQ=${parts.freq}`
   if (parts.interval && parts.interval > 1) {
@@ -219,6 +240,9 @@ export function buildRRule(parts: {
   if (parts.byDay) {
     rule += `;BYDAY=${parts.byDay}`
   }
+  if (parts.byMonthDay != null) {
+    rule += `;BYMONTHDAY=${parts.byMonthDay}`
+  }
   return rule
 }
 
@@ -226,19 +250,21 @@ export function buildRRule(parts: {
  * Convert an RRULE string to a human-readable description.
  *
  * Examples:
- *   "FREQ=DAILY"                -> "Every day"
- *   "FREQ=DAILY;INTERVAL=3"    -> "Every 3 days"
- *   "FREQ=WEEKLY"              -> "Every week"
- *   "FREQ=WEEKLY;BYDAY=MO"    -> "Every Monday"
- *   "FREQ=WEEKLY;INTERVAL=2"   -> "Every 2 weeks"
- *   "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR" -> "Every 2 weeks on Friday"
- *   "FREQ=MONTHLY"             -> "Every month"
- *   "FREQ=MONTHLY;INTERVAL=3"  -> "Every 3 months"
- *   "FREQ=YEARLY"              -> "Every year"
+ *   "FREQ=DAILY"                          -> "Every day"
+ *   "FREQ=DAILY;INTERVAL=3"              -> "Every 3 days"
+ *   "FREQ=WEEKLY"                        -> "Every week"
+ *   "FREQ=WEEKLY;BYDAY=MO"              -> "Every Monday"
+ *   "FREQ=WEEKLY;INTERVAL=2"             -> "Every 2 weeks"
+ *   "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR"   -> "Every 2 weeks on Friday"
+ *   "FREQ=MONTHLY"                       -> "Every month"
+ *   "FREQ=MONTHLY;BYMONTHDAY=1"         -> "Every month on the 1st"
+ *   "FREQ=MONTHLY;INTERVAL=3"            -> "Every 3 months"
+ *   "FREQ=MONTHLY;INTERVAL=2;BYMONTHDAY=15" -> "Every 2 months on the 15th"
+ *   "FREQ=YEARLY"                        -> "Every year"
  */
 export function describeRRule(rule: string | null | undefined): string {
   if (!rule) return ''
-  const { freq, interval, byDay } = parseRRule(rule)
+  const { freq, interval, byDay, byMonthDay } = parseRRule(rule)
 
   // Handle multi-day BYDAY (e.g., "MO,TU,WE,TH,FR")
   let dayDesc: string | null = null
@@ -273,9 +299,13 @@ export function describeRRule(rule: string | null | undefined): string {
       const base = `Every ${interval} weeks`
       return dayDesc ? `${base} on ${dayDesc}` : base
 
-    case 'MONTHLY':
-      if (interval === 1) return 'Every month'
-      return `Every ${interval} months`
+    case 'MONTHLY': {
+      const monthBase = interval === 1 ? 'Every month' : `Every ${interval} months`
+      if (byMonthDay != null) {
+        return `${monthBase} on the ${ordinalSuffix(byMonthDay)}`
+      }
+      return monthBase
+    }
 
     case 'YEARLY':
       if (interval === 1) return 'Every year'

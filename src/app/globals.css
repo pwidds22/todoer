@@ -66,6 +66,27 @@
   }
 }
 
+/* Force light mode class */
+.light {
+  --color-background: #fafafa;
+  --color-foreground: #0a0a0a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0a0a0a;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0a0a0a;
+  --color-secondary: #f4f4f5;
+  --color-secondary-foreground: #0a0a0a;
+  --color-muted: #f4f4f5;
+  --color-muted-foreground: #71717a;
+  --color-accent: #f4f4f5;
+  --color-accent-foreground: #0a0a0a;
+  --color-border: #e4e4e7;
+  --color-input: #e4e4e7;
+  --color-sidebar: #f8f8f8;
+  --color-sidebar-foreground: #71717a;
+  --color-sidebar-hover: #f0f0f5;
+}
+
 /* Force dark mode class */
 .dark {
   --color-background: #0a0a0a;

@@ -24,13 +24,12 @@ export default function SettingsPage() {
   // Apply theme to document
   useEffect(() => {
     const root = document.documentElement
+    root.classList.remove('dark', 'light')
     if (theme === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      root.classList.toggle('dark', prefersDark)
-      root.classList.toggle('light', !prefersDark)
+      root.classList.add(prefersDark ? 'dark' : 'light')
     } else {
-      root.classList.toggle('dark', theme === 'dark')
-      root.classList.toggle('light', theme === 'light')
+      root.classList.add(theme)
     }
   }, [theme])
 
