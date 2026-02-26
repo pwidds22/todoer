@@ -231,13 +231,13 @@ function useUpdateHabit() {
   })
 }
 
-// ---------- nag interval options ----------
+// ---------- nag interval options (in seconds, matching tasks) ----------
 const NAG_INTERVALS = [
-  { value: 15, label: 'Every 15 min' },
-  { value: 30, label: 'Every 30 min' },
-  { value: 60, label: 'Every hour' },
-  { value: 120, label: 'Every 2 hours' },
-  { value: 240, label: 'Every 4 hours' },
+  { value: 30, label: 'Every 30 seconds' },
+  { value: 60, label: 'Every 1 minute' },
+  { value: 120, label: 'Every 2 minutes' },
+  { value: 300, label: 'Every 5 minutes' },
+  { value: 600, label: 'Every 10 minutes' },
 ]
 
 // ---------- streak calculator ----------
