@@ -15,6 +15,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Pencil,
+  Bell,
+  BellOff,
 } from 'lucide-react'
 import {
   format,
@@ -41,6 +44,7 @@ interface Habit {
   target_count: number | null
   reminder_time: string | null
   nag_enabled: boolean | null
+  nag_interval: number | null
   position: number | null
   is_archived: boolean | null
   created_at: string | null
@@ -144,7 +148,7 @@ function useHabitCompletions(habitIds: string[], startDate: string, endDate: str
 function useCreateHabit() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (habit: { name: string; color: string; frequency_type: string; frequency_days?: number[] | null; target_count: number; reminder_time?: string | null }) => {
+    mutationFn: async (habit: { name: string; color: string; frequency_type: string; frequency_days?: number[] | null; target_count: number; reminder_time?: string | null; nag_enabled?: boolean; nag_interval?: number | null }) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
       const { data, error } = await supabase
@@ -213,6 +217,29 @@ function useArchiveHabit() {
   })
 }
 
+function useUpdateHabit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; frequency_type?: string; frequency_days?: number[] | null; reminder_time?: string | null; nag_enabled?: boolean; nag_interval?: number | null }) => {
+      const { error } = await supabase
+        .from('habits')
+        .update(updates)
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['habits'] }),
+  })
+}
+
+// ---------- nag interval options ----------
+const NAG_INTERVALS = [
+  { value: 15, label: 'Every 15 min' },
+  { value: 30, label: 'Every 30 min' },
+  { value: 60, label: 'Every hour' },
+  { value: 120, label: 'Every 2 hours' },
+  { value: 240, label: 'Every 4 hours' },
+]
+
 // ---------- streak calculator ----------
 function calculateStreak(completions: HabitCompletion[], habitId: string): number {
   const habitCompletions = completions
@@ -242,6 +269,8 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
   const [frequency, setFrequency] = useState<FrequencyType>('daily')
   const [customDays, setCustomDays] = useState<number[]>([])
   const [scheduledTime, setScheduledTime] = useState('')
+  const [nagEnabled, setNagEnabled] = useState(false)
+  const [nagInterval, setNagInterval] = useState(60)
   const createHabit = useCreateHabit()
 
   const toggleDay = (dayIndex: number) => {
@@ -262,6 +291,8 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
         frequency_days: frequency === 'custom' ? customDays : frequency === 'weekdays' ? [1, 2, 3, 4, 5] : null,
         target_count: 1,
         reminder_time: scheduledTime || null,
+        nag_enabled: nagEnabled,
+        nag_interval: nagEnabled ? nagInterval : null,
       },
       { onSuccess: () => onClose() }
     )
@@ -414,6 +445,63 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
             )}
           </div>
 
+          {/* Nag Reminders */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {nagEnabled ? (
+                  <Bell className="h-4 w-4 text-amber-400" />
+                ) : (
+                  <BellOff className="h-4 w-4 text-zinc-500" />
+                )}
+                <label className="text-sm text-zinc-400">Nag Reminders</label>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNagEnabled(!nagEnabled)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  nagEnabled ? 'bg-amber-500' : 'bg-zinc-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                    nagEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            <AnimatePresence>
+              {nagEnabled && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="pl-6">
+                    <label className="block text-xs text-zinc-500 mb-1.5">Reminder Frequency</label>
+                    <select
+                      value={nagInterval}
+                      onChange={(e) => setNagInterval(Number(e.target.value))}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                    >
+                      {NAG_INTERVALS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-zinc-500 mt-1.5">
+                      You&apos;ll be reminded if this habit isn&apos;t completed
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button
@@ -437,17 +525,279 @@ function CreateHabitDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ---------- Edit Habit Dialog ----------
+function EditHabitDialog({ habit, onClose }: { habit: Habit; onClose: () => void }) {
+  const [name, setName] = useState(habit.name)
+  const [color, setColor] = useState(habit.color || HABIT_COLORS[0])
+  const [frequency, setFrequency] = useState<FrequencyType>((habit.frequency_type as FrequencyType) || 'daily')
+  const [customDays, setCustomDays] = useState<number[]>(habit.frequency_days || [])
+  const [scheduledTime, setScheduledTime] = useState(habit.reminder_time?.slice(0, 5) || '')
+  const [nagEnabled, setNagEnabled] = useState(habit.nag_enabled || false)
+  const [nagInterval, setNagInterval] = useState(habit.nag_interval || 60)
+  const updateHabit = useUpdateHabit()
+
+  const toggleDay = (dayIndex: number) => {
+    setCustomDays((prev) =>
+      prev.includes(dayIndex) ? prev.filter((d) => d !== dayIndex) : [...prev, dayIndex]
+    )
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    if (frequency === 'custom' && customDays.length === 0) return
+    updateHabit.mutate(
+      {
+        id: habit.id,
+        name: name.trim(),
+        color,
+        frequency_type: frequency,
+        frequency_days: frequency === 'custom' ? customDays : frequency === 'weekdays' ? [1, 2, 3, 4, 5] : null,
+        reminder_time: scheduledTime || null,
+        nag_enabled: nagEnabled,
+        nag_interval: nagEnabled ? nagInterval : null,
+      },
+      { onSuccess: () => onClose() }
+    )
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+      >
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-semibold text-zinc-100">Edit Habit</h2>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-200">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Name */}
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1.5">Name</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Meditate, Exercise, Read..."
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            />
+          </div>
+
+          {/* Color */}
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1.5">Color</label>
+            <div className="flex gap-2">
+              {HABIT_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={`w-8 h-8 rounded-full transition-all ${
+                    color === c ? 'ring-2 ring-offset-2 ring-offset-zinc-900 scale-110' : 'hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: c, outlineColor: color === c ? c : undefined }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Frequency */}
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1.5">Frequency</label>
+            <div className="grid grid-cols-3 gap-2">
+              {FREQUENCY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    setFrequency(opt.value)
+                    if (opt.value !== 'custom') setCustomDays([])
+                  }}
+                  className={`py-2 px-2 rounded-lg text-sm font-medium transition-all text-center ${
+                    frequency === opt.value
+                      ? 'bg-emerald-600 text-white ring-1 ring-emerald-500'
+                      : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-zinc-500 mt-2">
+              {FREQUENCY_OPTIONS.find((o) => o.value === frequency)?.description}
+            </p>
+          </div>
+
+          {/* Custom day picker */}
+          <AnimatePresence>
+            {frequency === 'custom' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="overflow-hidden"
+              >
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-2">Select days</label>
+                  <div className="flex gap-2 justify-between">
+                    {DAY_LABELS.map((day) => (
+                      <button
+                        key={day.index}
+                        type="button"
+                        onClick={() => toggleDay(day.index)}
+                        title={day.name}
+                        className={`w-9 h-9 rounded-full text-xs font-semibold transition-all flex items-center justify-center ${
+                          customDays.includes(day.index)
+                            ? 'bg-emerald-600 text-white ring-1 ring-emerald-400'
+                            : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300 border border-zinc-700'
+                        }`}
+                      >
+                        {day.short}
+                      </button>
+                    ))}
+                  </div>
+                  {customDays.length > 0 && (
+                    <p className="text-xs text-emerald-400/80 mt-2">
+                      {[...customDays].sort((a, b) => a - b).map((d) => DAY_LABELS[d]?.name).join(', ')}
+                    </p>
+                  )}
+                  {customDays.length === 0 && (
+                    <p className="text-xs text-amber-400/80 mt-2">Pick at least one day</p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Scheduled Time */}
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1.5">Scheduled Time (optional)</label>
+            <div className="relative">
+              <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+              <input
+                type="time"
+                value={scheduledTime}
+                onChange={(e) => setScheduledTime(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg pl-9 pr-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 [&::-webkit-calendar-picker-indicator]:invert"
+              />
+            </div>
+            {scheduledTime && (
+              <button
+                type="button"
+                onClick={() => setScheduledTime('')}
+                className="text-xs text-zinc-500 hover:text-zinc-300 mt-1"
+              >
+                Clear time
+              </button>
+            )}
+          </div>
+
+          {/* Nag Reminders */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {nagEnabled ? (
+                  <Bell className="h-4 w-4 text-amber-400" />
+                ) : (
+                  <BellOff className="h-4 w-4 text-zinc-500" />
+                )}
+                <label className="text-sm text-zinc-400">Nag Reminders</label>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNagEnabled(!nagEnabled)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${
+                  nagEnabled ? 'bg-amber-500' : 'bg-zinc-700'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                    nagEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            <AnimatePresence>
+              {nagEnabled && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="pl-6">
+                    <label className="block text-xs text-zinc-500 mb-1.5">Reminder Frequency</label>
+                    <select
+                      value={nagInterval}
+                      onChange={(e) => setNagInterval(Number(e.target.value))}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                    >
+                      {NAG_INTERVALS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-zinc-500 mt-1.5">
+                      You&apos;ll be reminded if this habit isn&apos;t completed
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-lg bg-zinc-800 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim() || updateHabit.isPending || (frequency === 'custom' && customDays.length === 0)}
+              className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 transition-colors disabled:opacity-50"
+            >
+              {updateHabit.isPending ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  )
+}
+
 // ---------- Habit Row ----------
 function HabitRow({
   habit,
   days,
   completionsByDate,
   streak,
+  onEdit,
 }: {
   habit: Habit
   days: Date[]
   completionsByDate: Map<string, boolean>
   streak: number
+  onEdit: () => void
 }) {
   const toggleCompletion = useToggleHabitCompletion()
   const deleteHabit = useDeleteHabit()
@@ -465,7 +815,7 @@ function HabitRow({
             className="w-3 h-3 rounded-full shrink-0"
             style={{ backgroundColor: habitColor }}
           />
-          <span className="text-sm font-medium text-zinc-200 truncate">{habit.name}</span>
+          <button onClick={onEdit} className="text-sm font-medium text-zinc-200 truncate text-left hover:text-emerald-400 transition-colors">{habit.name}</button>
           <span className="text-[11px] text-zinc-500 shrink-0 bg-zinc-800 px-2 py-0.5 rounded-full">
             {getFrequencyDescription(habit.frequency_type, habit.frequency_days)}
           </span>
@@ -478,6 +828,11 @@ function HabitRow({
                 const h12 = h % 12 || 12
                 return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
               })()}
+            </span>
+          )}
+          {habit.nag_enabled && (
+            <span className="flex items-center gap-0.5 text-[11px] text-amber-400/70 shrink-0" title="Nag reminders on">
+              <Bell className="h-3 w-3" />
             </span>
           )}
           {streak > 0 && (
@@ -502,6 +857,13 @@ function HabitRow({
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
                 <div className="absolute right-0 top-8 z-50 bg-zinc-800 border border-zinc-700 rounded-lg py-1 shadow-xl min-w-[140px]">
+                  <button
+                    onClick={() => { onEdit(); setShowMenu(false) }}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-700"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
                   <button
                     onClick={() => { archiveHabit.mutate(habit.id); setShowMenu(false) }}
                     className="flex items-center gap-2 w-full px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-700"
@@ -662,6 +1024,7 @@ function HabitsHeatmap({
 // ---------- Main Page ----------
 export default function HabitsPage() {
   const [showCreate, setShowCreate] = useState(false)
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null)
   const [weekOffset, setWeekOffset] = useState(0)
 
   // Week days for the tracker row
@@ -807,6 +1170,7 @@ export default function HabitsPage() {
               days={weekDays}
               completionsByDate={habitCompletionMaps.get(habit.id) || new Map()}
               streak={calculateStreak(completions, habit.id)}
+              onEdit={() => setEditingHabit(habit)}
             />
           ))}
         </div>
@@ -820,6 +1184,11 @@ export default function HabitsPage() {
       {/* Create Dialog */}
       <AnimatePresence>
         {showCreate && <CreateHabitDialog onClose={() => setShowCreate(false)} />}
+      </AnimatePresence>
+
+      {/* Edit Dialog */}
+      <AnimatePresence>
+        {editingHabit && <EditHabitDialog habit={editingHabit} onClose={() => setEditingHabit(null)} />}
       </AnimatePresence>
     </div>
   )
