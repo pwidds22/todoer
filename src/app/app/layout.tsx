@@ -6,6 +6,8 @@ import { useUIStore } from '@/stores/ui-store'
 import { Menu } from 'lucide-react'
 import { TaskDetail } from '@/components/tasks/TaskDetail'
 import { NagReminder } from '@/components/NagReminder'
+import { Toaster } from 'sonner'
+import { KeyboardShortcuts } from '@/components/KeyboardShortcuts'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, taskDetailOpen, selectedTaskId, selectTask, theme } = useUIStore()
@@ -55,6 +57,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Nag reminder system (headless) */}
       <NagReminder />
+
+      {/* Global keyboard shortcuts */}
+      <KeyboardShortcuts />
+
+      {/* Toast notifications */}
+      <Toaster
+        theme="dark"
+        position="bottom-center"
+        toastOptions={{
+          className: 'bg-card border-border text-foreground',
+          duration: 5000,
+        }}
+      />
     </div>
   )
 }

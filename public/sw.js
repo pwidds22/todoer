@@ -1,14 +1,19 @@
-// Todoer Service Worker
-// Handles offline caching and push notifications for the nagging reminder system
+// Todoer Service Worker v2
+// Handles offline caching, push notifications, and background sync
 
-const CACHE_NAME = 'todoer-v1';
+const CACHE_NAME = 'todoer-v2';
 const STATIC_ASSETS = [
   '/',
   '/app/today',
+  '/app/inbox',
+  '/app/upcoming',
+  '/app/search',
   '/manifest.json',
   '/icons/icon-192x192.svg',
   '/icons/icon-512x512.svg',
 ];
+
+const API_CACHE_NAME = 'todoer-api-v1';
 
 // Install: pre-cache the app shell
 self.addEventListener('install', (event) => {
@@ -17,7 +22,6 @@ self.addEventListener('install', (event) => {
       return cache.addAll(STATIC_ASSETS);
     })
   );
-  // Activate immediately without waiting for existing clients to close
   self.skipWaiting();
 });
 
@@ -27,50 +31,53 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => name !== CACHE_NAME && name !== API_CACHE_NAME)
           .map((name) => caches.delete(name))
       );
     })
   );
-  // Take control of all open clients immediately
   self.clients.claim();
 });
 
-// Fetch: cache-first for static assets, network-first for API calls
+// Fetch: intelligent caching strategy
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
   if (request.method !== 'GET') return;
-
-  // Skip Chrome extension requests and other non-http(s) schemes
   if (!url.protocol.startsWith('http')) return;
 
-  // Network-first for API calls and dynamic routes
+  // Supabase API calls: stale-while-revalidate
+  if (url.hostname.includes('supabase.co') && url.pathname.startsWith('/rest/')) {
+    event.respondWith(staleWhileRevalidate(request));
+    return;
+  }
+
+  // Next.js API routes: network-first
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/data/')) {
     event.respondWith(networkFirst(request));
     return;
   }
 
-  // Cache-first for static assets (_next/static, icons, etc.)
+  // Static assets: cache-first
   if (
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||
     url.pathname.startsWith('/sounds/') ||
     url.pathname.endsWith('.svg') ||
     url.pathname.endsWith('.png') ||
-    url.pathname.endsWith('.ico')
+    url.pathname.endsWith('.ico') ||
+    url.pathname.endsWith('.woff2')
   ) {
     event.respondWith(cacheFirst(request));
     return;
   }
 
-  // Network-first for navigation and everything else
+  // Navigation and everything else: network-first with offline fallback
   event.respondWith(networkFirst(request));
 });
 
-// Cache-first strategy: try cache, fall back to network
+// Cache-first: try cache, fallback to network
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
@@ -87,7 +94,7 @@ async function cacheFirst(request) {
   }
 }
 
-// Network-first strategy: try network, fall back to cache
+// Network-first: try network, fallback to cache
 async function networkFirst(request) {
   try {
     const response = await fetch(request);
@@ -106,8 +113,32 @@ async function networkFirst(request) {
       if (fallback) return fallback;
     }
 
-    return new Response('Offline', { status: 503 });
+    return new Response(
+      JSON.stringify({ error: 'You are offline', offline: true }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } }
+    );
   }
+}
+
+// Stale-while-revalidate: serve cache immediately, update in background
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(API_CACHE_NAME);
+  const cached = await cache.match(request);
+
+  const fetchPromise = fetch(request)
+    .then((response) => {
+      if (response.ok) {
+        cache.put(request, response.clone());
+      }
+      return response;
+    })
+    .catch(() => cached || new Response(
+      JSON.stringify({ error: 'Offline', offline: true }),
+      { status: 503, headers: { 'Content-Type': 'application/json' } }
+    ));
+
+  // Return cached version immediately if available, otherwise wait for network
+  return cached || fetchPromise;
 }
 
 // Push notification handler for the nagging reminder system
@@ -121,13 +152,11 @@ self.addEventListener('push', (event) => {
     data: { url: '/app/today' },
   };
 
-  // Parse push event data if available
   if (event.data) {
     try {
       const payload = event.data.json();
       data = { ...data, ...payload };
     } catch {
-      // If not JSON, use the text as the body
       data.body = event.data.text() || data.body;
     }
   }
@@ -139,7 +168,7 @@ self.addEventListener('push', (event) => {
     tag: data.tag || 'todoer-reminder',
     data: data.data || { url: '/app/today' },
     vibrate: [200, 100, 200],
-    requireInteraction: true, // Keep notification visible until user interacts
+    requireInteraction: true,
     actions: [
       { action: 'open', title: 'Open Todoer' },
       { action: 'dismiss', title: 'Dismiss' },
@@ -151,7 +180,7 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Notification click handler: open the app at the right page
+// Notification click handler
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
@@ -161,7 +190,6 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      // If there's already an open window, focus it and navigate
       for (const client of clients) {
         if (client.url.includes('/app/') && 'focus' in client) {
           client.focus();
@@ -169,7 +197,6 @@ self.addEventListener('notificationclick', (event) => {
           return;
         }
       }
-      // Otherwise, open a new window
       return self.clients.openWindow(targetUrl);
     })
   );

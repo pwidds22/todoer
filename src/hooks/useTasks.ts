@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { Task, TaskInsert, TaskUpdate, Project } from '@/types/database'
 import { calculateNextDueDate } from '@/lib/recurrence'
+import { toast } from 'sonner'
 
 const supabase = createClient()
 
@@ -235,9 +236,39 @@ export function useCompleteTask() {
 
       return completedTask
     },
-    onSuccess: () => {
+    onSuccess: (completedTask) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['subtasks'] })
+
+      // Show undo toast when completing (not uncompleting)
+      if (completedTask.is_completed) {
+        toast(`Task completed`, {
+          description: completedTask.title,
+          action: {
+            label: 'Undo',
+            onClick: async () => {
+              // If a recurring task spawned a next occurrence, delete it
+              if (completedTask.recurrence_rule) {
+                const { data: nextTasks } = await supabase
+                  .from('tasks')
+                  .select('id')
+                  .eq('title', completedTask.title)
+                  .eq('is_completed', false)
+                  .eq('is_deleted', false)
+                  .neq('id', completedTask.id)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                if (nextTasks && nextTasks.length > 0) {
+                  await supabase.from('tasks').update({ is_deleted: true }).eq('id', nextTasks[0].id)
+                }
+              }
+              await supabase.from('tasks').update({ is_completed: false, completed_at: null }).eq('id', completedTask.id)
+              queryClient.invalidateQueries({ queryKey: ['tasks'] })
+              queryClient.invalidateQueries({ queryKey: ['subtasks'] })
+            },
+          },
+        })
+      }
     },
   })
 }
@@ -246,12 +277,43 @@ export function useDeleteTask() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
+      // Fetch the task first so we can show its title and undo
+      const { data: taskData } = await supabase.from('tasks').select('title').eq('id', id).single()
+
       const { error } = await supabase
         .from('tasks')
         .update({ is_deleted: true, deleted_at: new Date().toISOString() })
         .eq('id', id)
 
       if (error) throw error
+      return { id, title: (taskData as any)?.title || 'Task' }
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+
+      toast('Task deleted', {
+        description: result.title,
+        action: {
+          label: 'Undo',
+          onClick: async () => {
+            await supabase.from('tasks').update({ is_deleted: false, deleted_at: null }).eq('id', result.id)
+            queryClient.invalidateQueries({ queryKey: ['tasks'] })
+          },
+        },
+      })
+    },
+  })
+}
+
+export function useReorderTasks() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (tasks: { id: string; position: number }[]) => {
+      // Update positions in batch
+      const updates = tasks.map(({ id, position }) =>
+        supabase.from('tasks').update({ position }).eq('id', id)
+      )
+      await Promise.all(updates)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })

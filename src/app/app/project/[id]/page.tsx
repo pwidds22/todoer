@@ -245,7 +245,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
         <div className="space-y-6">
           {/* Unsectioned tasks */}
           {unsectionedTasks.length > 0 && (
-            <TaskList tasks={unsectionedTasks} />
+            <TaskList tasks={unsectionedTasks} sortable />
           )}
 
           {/* Sectioned tasks */}

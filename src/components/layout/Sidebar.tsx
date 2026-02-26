@@ -12,7 +12,7 @@ import {
   Inbox, Sun, Calendar, CalendarDays, Target,
   Hash, Tag, BarChart3, Timer, Settings,
   Plus, ChevronDown, ChevronRight, LogOut,
-  CircleDot, X, CheckSquare
+  CircleDot, X, CheckSquare, Users, Search
 } from 'lucide-react'
 import { useState } from 'react'
 import { ProjectForm } from '@/components/projects/ProjectForm'
@@ -25,9 +25,10 @@ interface SidebarLinkProps {
   count?: number
   color?: string
   active?: boolean
+  badge?: React.ReactNode
 }
 
-function SidebarLink({ href, icon, label, count, active }: SidebarLinkProps) {
+function SidebarLink({ href, icon, label, count, active, badge }: SidebarLinkProps) {
   return (
     <Link
       href={href}
@@ -40,6 +41,7 @@ function SidebarLink({ href, icon, label, count, active }: SidebarLinkProps) {
     >
       <span className="shrink-0">{icon}</span>
       <span className="truncate flex-1">{label}</span>
+      {badge}
       {count !== undefined && count > 0 && (
         <span className="text-xs text-muted-foreground">{count}</span>
       )}
@@ -52,7 +54,7 @@ export function Sidebar() {
   const { data: projects } = useProjects()
   const { data: labels } = useLabels()
   const { data: todayTasks } = useTodayTasks()
-  const { signOut } = useAuth()
+  const { signOut, user } = useAuth()
   const { sidebarOpen, setSidebarOpen } = useUIStore()
   const [projectsExpanded, setProjectsExpanded] = useState(true)
   const [labelsExpanded, setLabelsExpanded] = useState(true)
@@ -99,6 +101,7 @@ export function Sidebar() {
           <SidebarLink href="/app/upcoming" icon={<Calendar className="h-4 w-4" />} label="Upcoming" active={pathname === '/app/upcoming'} />
           <SidebarLink href="/app/calendar" icon={<CalendarDays className="h-4 w-4" />} label="Calendar" active={pathname === '/app/calendar'} />
           <SidebarLink href="/app/matrix" icon={<Target className="h-4 w-4" />} label="Matrix" active={pathname === '/app/matrix'} />
+          <SidebarLink href="/app/search" icon={<Search className="h-4 w-4" />} label="Search" active={pathname === '/app/search'} />
 
           <div className="h-px bg-border my-3" />
 
@@ -134,6 +137,9 @@ export function Sidebar() {
                     }
                     label={project.name}
                     active={pathname === `/app/project/${project.id}`}
+                    badge={project.user_id !== user?.id ? (
+                      <Users className="h-3 w-3 text-muted-foreground shrink-0" />
+                    ) : undefined}
                   />
                 ))}
                 {showProjectForm && (

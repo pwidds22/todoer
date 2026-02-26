@@ -6,26 +6,58 @@ import { TaskCheckbox } from './TaskCheckbox'
 import { useCompleteTask } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/ui-store'
 import type { Task, Project } from '@/types/database'
-import { Bell, CalendarIcon, Hash, Repeat } from 'lucide-react'
+import { Bell, CalendarIcon, Hash, Repeat, GripVertical } from 'lucide-react'
+import { forwardRef } from 'react'
 
 interface TaskItemProps {
   task: Task & { project?: Project | null }
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
+  dragHandleProps?: any
+  style?: React.CSSProperties
 }
 
-export function TaskItem({ task }: TaskItemProps) {
+export const TaskItem = forwardRef<HTMLDivElement, TaskItemProps>(function TaskItem(
+  { task, selectable, selected, onToggleSelect, dragHandleProps, style },
+  ref
+) {
   const completeTask = useCompleteTask()
   const { selectTask } = useUIStore()
   const overdue = isOverdue(task.due_date, task.due_time)
   const dueDateStr = formatDueDate(task.due_date, task.due_time)
 
+  function handleClick(e: React.MouseEvent) {
+    // If shift-clicking and selectable, toggle selection instead
+    if (e.shiftKey && selectable && onToggleSelect) {
+      e.preventDefault()
+      onToggleSelect()
+      return
+    }
+    selectTask(task.id)
+  }
+
   return (
     <div
-      onClick={() => selectTask(task.id)}
+      ref={ref}
+      style={style}
+      onClick={handleClick}
       className={cn(
-        'group flex items-start gap-3 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-accent/50',
-        task.is_completed && 'opacity-50'
+        'group flex items-start gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-accent/50',
+        task.is_completed && 'opacity-50',
+        selected && 'bg-primary/10 ring-1 ring-primary/30'
       )}
     >
+      {/* Drag handle */}
+      {dragHandleProps && (
+        <div
+          {...dragHandleProps}
+          className="pt-1 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity touch-none"
+        >
+          <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+        </div>
+      )}
+
       <div className="pt-0.5">
         <TaskCheckbox
           isCompleted={!!task.is_completed}
@@ -83,4 +115,4 @@ export function TaskItem({ task }: TaskItemProps) {
       </div>
     </div>
   )
-}
+})
