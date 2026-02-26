@@ -3,10 +3,19 @@
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Settings, Moon, Sun, Bell, Clock, Monitor, BellRing, Shield } from 'lucide-react'
+import { Settings, Moon, Sun, Bell, Clock, Monitor, BellRing, Shield, Users, UserPlus, Mail, Check, X, Trash2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui-store'
 import { useEffect, useState } from 'react'
+import {
+  useMyShares,
+  usePendingInvitations,
+  useSharedWithMe,
+  useInviteUser,
+  useAcceptInvitation,
+  useDeclineInvitation,
+  useRemoveShare,
+} from '@/hooks/useSharing'
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -221,12 +230,182 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Sharing */}
+        <SharingSection userEmail={user?.email || ''} />
+
         {/* Account */}
         <div className="bg-card border border-border rounded-lg p-4">
           <h2 className="font-medium mb-3">Account</h2>
           <p className="text-sm text-muted-foreground">{user?.email}</p>
         </div>
       </div>
+    </div>
+  )
+}
+
+function SharingSection({ userEmail }: { userEmail: string }) {
+  const { data: myShares, isLoading: loadingShares } = useMyShares()
+  const { data: invitations, isLoading: loadingInvitations } = usePendingInvitations()
+  const { data: sharedWithMe } = useSharedWithMe()
+  const inviteUser = useInviteUser()
+  const acceptInvitation = useAcceptInvitation()
+  const declineInvitation = useDeclineInvitation()
+  const removeShare = useRemoveShare()
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [error, setError] = useState('')
+
+  function handleInvite() {
+    const email = inviteEmail.trim().toLowerCase()
+    if (!email) return
+    if (email === userEmail.toLowerCase()) {
+      setError("You can't invite yourself")
+      return
+    }
+    if (myShares?.some(s => s.shared_with_email === email)) {
+      setError('Already invited this person')
+      return
+    }
+
+    setError('')
+    inviteUser.mutate(email, {
+      onSuccess: () => setInviteEmail(''),
+      onError: (err: any) => setError(err.message || 'Failed to send invitation'),
+    })
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-4">
+      <h2 className="font-medium flex items-center gap-2 mb-3">
+        <Users className="h-4 w-4" /> Sharing
+      </h2>
+      <p className="text-xs text-muted-foreground mb-4">
+        Share your account with family members so they can view and manage your tasks, projects, and habits together.
+      </p>
+
+      {/* Pending invitations for me */}
+      {invitations && invitations.length > 0 && (
+        <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+          <p className="text-sm font-medium flex items-center gap-2 mb-2">
+            <Mail className="h-3.5 w-3.5 text-primary" />
+            Pending invitations
+          </p>
+          <div className="space-y-2">
+            {invitations.map(inv => (
+              <div key={inv.id} className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  Invitation from <strong className="text-foreground">{inv.shared_with_email === userEmail.toLowerCase() ? 'someone' : ''}</strong> (owner)
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => acceptInvitation.mutate(inv.id)}
+                    disabled={acceptInvitation.isPending}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors disabled:opacity-50"
+                  >
+                    <Check className="h-3 w-3" /> Accept
+                  </button>
+                  <button
+                    onClick={() => declineInvitation.mutate(inv.id)}
+                    disabled={declineInvitation.isPending}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs bg-accent rounded-md hover:bg-accent/80 transition-colors disabled:opacity-50"
+                  >
+                    <X className="h-3 w-3" /> Decline
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Invite form */}
+      <div className="mb-4">
+        <label className="text-sm font-medium mb-1 block">Invite someone</label>
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={inviteEmail}
+            onChange={e => { setInviteEmail(e.target.value); setError('') }}
+            onKeyDown={e => e.key === 'Enter' && handleInvite()}
+            placeholder="Enter email address..."
+            className="flex-1 bg-accent rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <button
+            onClick={handleInvite}
+            disabled={!inviteEmail.trim() || inviteUser.isPending}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {inviteUser.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <UserPlus className="h-3.5 w-3.5" />
+            )}
+            Invite
+          </button>
+        </div>
+        {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      </div>
+
+      {/* My shares list */}
+      {loadingShares ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading...
+        </div>
+      ) : myShares && myShares.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">People I invited</p>
+          {myShares.map(share => (
+            <div key={share.id} className="flex items-center justify-between py-1.5">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary">
+                  {share.shared_with_email[0].toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm">{share.shared_with_email}</p>
+                  <p className={cn(
+                    'text-xs',
+                    share.status === 'accepted' ? 'text-green-500' : share.status === 'declined' ? 'text-red-400' : 'text-muted-foreground'
+                  )}>
+                    {share.status === 'accepted' ? 'Connected' : share.status === 'declined' ? 'Declined' : 'Pending...'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => removeShare.mutate(share.id)}
+                disabled={removeShare.isPending}
+                className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
+                title="Remove"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Shared with me list */}
+      {sharedWithMe && sharedWithMe.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-border space-y-2">
+          <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Shared with me</p>
+          {sharedWithMe.map(share => (
+            <div key={share.id} className="flex items-center gap-2 py-1.5">
+              <div className="w-7 h-7 rounded-full bg-green-500/10 flex items-center justify-center text-xs font-medium text-green-500">
+                <Check className="h-3.5 w-3.5" />
+              </div>
+              <div>
+                <p className="text-sm">Shared by account owner</p>
+                <p className="text-xs text-green-500">Connected</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loadingShares && (!myShares || myShares.length === 0) && (!sharedWithMe || sharedWithMe.length === 0) && (!invitations || invitations.length === 0) && (
+        <p className="text-xs text-muted-foreground py-1">
+          No active shares. Invite someone above to share your tasks and projects.
+        </p>
+      )}
     </div>
   )
 }

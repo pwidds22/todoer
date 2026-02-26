@@ -79,7 +79,7 @@ export function useCreateProject() {
 export function useUpdateProject() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; icon?: string; is_favorite?: boolean; is_archived?: boolean; view_type?: string }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; icon?: string; description?: string; is_favorite?: boolean; is_archived?: boolean; view_type?: string }) => {
       const { data, error } = await supabase
         .from('projects')
         .update(updates)

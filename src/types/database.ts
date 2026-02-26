@@ -309,6 +309,36 @@ export type Database = {
         }
         Relationships: []
       }
+      shared_accounts: {
+        Row: {
+          id: string
+          owner_id: string
+          shared_with_id: string | null
+          shared_with_email: string
+          status: string
+          created_at: string | null
+          accepted_at: string | null
+        }
+        Insert: {
+          id?: string
+          owner_id: string
+          shared_with_id?: string | null
+          shared_with_email: string
+          status?: string
+          created_at?: string | null
+          accepted_at?: string | null
+        }
+        Update: {
+          id?: string
+          owner_id?: string
+          shared_with_id?: string | null
+          shared_with_email?: string
+          status?: string
+          created_at?: string | null
+          accepted_at?: string | null
+        }
+        Relationships: []
+      }
       sections: {
         Row: {
           created_at: string | null
