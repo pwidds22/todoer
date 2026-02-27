@@ -1,7 +1,7 @@
 // Todoer Service Worker v2
 // Handles offline caching, push notifications, and background sync
 
-const CACHE_NAME = 'todoer-v2';
+const CACHE_NAME = 'todoer-v3';
 const STATIC_ASSETS = [
   '/',
   '/app/today',
@@ -13,7 +13,7 @@ const STATIC_ASSETS = [
   '/icons/icon-512x512.svg',
 ];
 
-const API_CACHE_NAME = 'todoer-api-v1';
+// API responses now use network-first (same CACHE_NAME) for data freshness
 
 // Install: pre-cache the app shell
 self.addEventListener('install', (event) => {
@@ -31,7 +31,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME && name !== API_CACHE_NAME)
+          .filter((name) => name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       );
     })
@@ -47,9 +47,9 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   if (!url.protocol.startsWith('http')) return;
 
-  // Supabase API calls: stale-while-revalidate
+  // Supabase API calls: network-first (ensures fresh data after mutations)
   if (url.hostname.includes('supabase.co') && url.pathname.startsWith('/rest/')) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(networkFirst(request));
     return;
   }
 
@@ -118,27 +118,6 @@ async function networkFirst(request) {
       { status: 503, headers: { 'Content-Type': 'application/json' } }
     );
   }
-}
-
-// Stale-while-revalidate: serve cache immediately, update in background
-async function staleWhileRevalidate(request) {
-  const cache = await caches.open(API_CACHE_NAME);
-  const cached = await cache.match(request);
-
-  const fetchPromise = fetch(request)
-    .then((response) => {
-      if (response.ok) {
-        cache.put(request, response.clone());
-      }
-      return response;
-    })
-    .catch(() => cached || new Response(
-      JSON.stringify({ error: 'Offline', offline: true }),
-      { status: 503, headers: { 'Content-Type': 'application/json' } }
-    ));
-
-  // Return cached version immediately if available, otherwise wait for network
-  return cached || fetchPromise;
 }
 
 // Push notification handler for the nagging reminder system
