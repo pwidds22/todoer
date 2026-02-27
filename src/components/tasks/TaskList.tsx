@@ -135,34 +135,38 @@ export function TaskList({ tasks, emptyMessage = 'No tasks', groupBy = 'none', s
     })
 
     return (
-      <div className="space-y-4">
-        {sortedKeys.map((key) => (
-          <div key={key}>
-            <h3 className={`text-xs font-semibold uppercase tracking-wider px-3 py-1 ${key === 'Overdue' ? 'text-red-400' : 'text-muted-foreground'}`}>
-              {key} <span className="text-muted-foreground font-normal">({groups[key].length})</span>
-            </h3>
-            <div>
-              {groups[key].map((task) => (
-                <TaskItem
-                  key={task.id}
-                  task={task}
-                  selectable
-                  selected={selectedIds.has(task.id)}
-                  onToggleSelect={() => toggleSelect(task.id)}
-                />
-              ))}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <div className="space-y-4">
+          {sortedKeys.map((key) => (
+            <div key={key}>
+              <h3 className={`text-xs font-semibold uppercase tracking-wider px-3 py-1 ${key === 'Overdue' ? 'text-red-400' : 'text-muted-foreground'}`}>
+                {key} <span className="text-muted-foreground font-normal">({groups[key].length})</span>
+              </h3>
+              <SortableContext items={groups[key].map(t => t.id)} strategy={verticalListSortingStrategy}>
+                <div>
+                  {groups[key].map((task) => (
+                    <SortableTaskItem
+                      key={task.id}
+                      task={task}
+                      selectable
+                      selected={selectedIds.has(task.id)}
+                      onToggleSelect={() => toggleSelect(task.id)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
             </div>
-          </div>
-        ))}
+          ))}
 
-        {/* Bulk action bar */}
-        <BulkActionBar
-          count={selectedIds.size}
-          onComplete={handleBulkComplete}
-          onDelete={handleBulkDelete}
-          onClear={clearSelection}
-        />
-      </div>
+          {/* Bulk action bar */}
+          <BulkActionBar
+            count={selectedIds.size}
+            onComplete={handleBulkComplete}
+            onDelete={handleBulkDelete}
+            onClear={clearSelection}
+          />
+        </div>
+      </DndContext>
     )
   }
 
@@ -194,6 +198,7 @@ export function TaskList({ tasks, emptyMessage = 'No tasks', groupBy = 'none', s
     )
   }
 
+  // Default: non-sortable flat list (e.g. upcoming, search results)
   return (
     <>
       <div>

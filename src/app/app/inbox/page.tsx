@@ -31,6 +31,7 @@ export default function InboxPage() {
       ) : (
         <TaskList
           tasks={tasks || []}
+          sortable
           emptyMessage="Inbox is empty. Capture tasks here and organize them later."
         />
       )}
