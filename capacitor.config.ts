@@ -20,7 +20,7 @@ const config: CapacitorConfig = {
       backgroundColor: '#0a0a0a',
     },
     Keyboard: {
-      resize: 'body',
+      resize: 'body' as unknown as import('@capacitor/keyboard').KeyboardResize,
       resizeOnFullScreen: true,
     },
     PushNotifications: {

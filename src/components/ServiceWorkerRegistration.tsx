@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { isNative } from '@/lib/native/platform'
 
 /**
  * Registers the service worker and provides push notification subscription utilities.
@@ -9,6 +10,7 @@ import { useEffect } from 'react'
 export function ServiceWorkerRegistration() {
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+    if (isNative()) return // Native apps don't need a Service Worker
 
     navigator.serviceWorker
       .register('/sw.js')

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Providers } from './providers'
 import { ServiceWorkerRegistration } from '@/components/ServiceWorkerRegistration'
+import { NativeInit } from '@/components/NativeInit'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -51,6 +52,7 @@ export default function RootLayout({
       </head>
       <body className="bg-background text-foreground antialiased">
         <ServiceWorkerRegistration />
+        <NativeInit />
         <Providers>{children}</Providers>
       </body>
     </html>
