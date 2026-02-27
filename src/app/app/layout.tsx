@@ -8,6 +8,7 @@ import { TaskDetail } from '@/components/tasks/TaskDetail'
 import { NagReminder } from '@/components/NagReminder'
 import { Toaster } from 'sonner'
 import { KeyboardShortcuts } from '@/components/KeyboardShortcuts'
+import { AuthGuard } from '@/components/AuthGuard'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { setSidebarOpen, taskDetailOpen, selectedTaskId, selectTask, theme } = useUIStore()
@@ -33,43 +34,45 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [theme])
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+    <AuthGuard>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile header */}
-        <div className="md:hidden flex items-center gap-2 p-3 border-b border-border">
-          <button onClick={() => setSidebarOpen(true)} className="p-1 hover:bg-accent rounded">
-            <Menu className="h-5 w-5" />
-          </button>
-        </div>
+        <main className="flex-1 flex flex-col overflow-hidden">
+          {/* Mobile header */}
+          <div className="md:hidden flex items-center gap-2 p-3 border-b border-border">
+            <button onClick={() => setSidebarOpen(true)} className="p-1 hover:bg-accent rounded">
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
 
-        {/* Content area */}
-        <div className="flex-1 overflow-y-auto">
-          {children}
-        </div>
-      </main>
+          {/* Content area */}
+          <div className="flex-1 overflow-y-auto">
+            {children}
+          </div>
+        </main>
 
-      {/* Task detail slide-in panel */}
-      {taskDetailOpen && selectedTaskId && (
-        <TaskDetail taskId={selectedTaskId} onClose={() => selectTask(null)} />
-      )}
+        {/* Task detail slide-in panel */}
+        {taskDetailOpen && selectedTaskId && (
+          <TaskDetail taskId={selectedTaskId} onClose={() => selectTask(null)} />
+        )}
 
-      {/* Nag reminder system (headless) */}
-      <NagReminder />
+        {/* Nag reminder system (headless) */}
+        <NagReminder />
 
-      {/* Global keyboard shortcuts */}
-      <KeyboardShortcuts />
+        {/* Global keyboard shortcuts */}
+        <KeyboardShortcuts />
 
-      {/* Toast notifications */}
-      <Toaster
-        theme="dark"
-        position="bottom-center"
-        toastOptions={{
-          className: 'bg-card border-border text-foreground',
-          duration: 5000,
-        }}
-      />
-    </div>
+        {/* Toast notifications */}
+        <Toaster
+          theme="dark"
+          position="bottom-center"
+          toastOptions={{
+            className: 'bg-card border-border text-foreground',
+            duration: 5000,
+          }}
+        />
+      </div>
+    </AuthGuard>
   )
 }
