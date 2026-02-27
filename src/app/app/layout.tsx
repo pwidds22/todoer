@@ -35,7 +35,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthGuard>
-      <div className="flex h-screen overflow-hidden">
+      <div className="flex h-screen overflow-hidden" style={{
+          paddingTop: 'var(--safe-area-top)',
+          paddingBottom: 'var(--safe-area-bottom)',
+        }}>
         <Sidebar />
 
         <main className="flex-1 flex flex-col overflow-hidden">
