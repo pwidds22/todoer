@@ -7,6 +7,8 @@ export function NativeInit() {
   useEffect(() => {
     if (!isNative()) return
 
+    const listeners: { remove: () => Promise<void> }[] = []
+
     const init = async () => {
       // Status bar
       const { StatusBar, Style } = await import('@capacitor/status-bar')
@@ -15,20 +17,24 @@ export function NativeInit() {
 
       // Keyboard
       const { Keyboard } = await import('@capacitor/keyboard')
-      Keyboard.addListener('keyboardWillShow', () => {
-        document.body.classList.add('keyboard-open')
-      })
-      Keyboard.addListener('keyboardWillHide', () => {
-        document.body.classList.remove('keyboard-open')
-      })
+      listeners.push(
+        await Keyboard.addListener('keyboardWillShow', () => {
+          document.body.classList.add('keyboard-open')
+        }),
+        await Keyboard.addListener('keyboardWillHide', () => {
+          document.body.classList.remove('keyboard-open')
+        })
+      )
 
       // App state — refetch data when returning from background
       const { App } = await import('@capacitor/app')
-      App.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) {
-          window.dispatchEvent(new Event('focus'))
-        }
-      })
+      listeners.push(
+        await App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            window.dispatchEvent(new Event('focus'))
+          }
+        })
+      )
 
       // Push notifications
       const { initPushNotifications } = await import('@/lib/native/notifications')
@@ -40,6 +46,10 @@ export function NativeInit() {
     }
 
     init().catch(console.error)
+
+    return () => {
+      listeners.forEach((handle) => handle.remove())
+    }
   }, [])
 
   return null

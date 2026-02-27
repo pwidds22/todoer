@@ -19,11 +19,13 @@ export default function LoginPage() {
   useEffect(() => {
     if (!isNative()) return
 
+    let listenerHandle: { remove: () => Promise<void> } | undefined
+
     const handleDeepLink = async () => {
       const { App } = await import('@capacitor/app')
-      App.addListener('appUrlOpen', async ({ url }) => {
+      listenerHandle = await App.addListener('appUrlOpen', async ({ url }) => {
         // URL will be: com.todoer.app://login-callback#access_token=...
-        if (url.includes('login-callback')) {
+        if (url.startsWith('com.todoer.app://login-callback')) {
           // Extract tokens from the URL fragment
           const hashParams = new URLSearchParams(url.split('#')[1] || '')
           const accessToken = hashParams.get('access_token')
@@ -42,6 +44,10 @@ export default function LoginPage() {
     }
 
     handleDeepLink()
+
+    return () => {
+      listenerHandle?.remove()
+    }
   }, [router, supabase])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -72,7 +78,6 @@ export default function LoginPage() {
         setError(error.message)
       } else {
         router.push('/app/today')
-        router.refresh()
       }
     }
     setLoading(false)

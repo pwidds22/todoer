@@ -24,7 +24,14 @@ export async function initPushNotifications() {
 
   PushNotifications.addListener('registration', (token) => {
     console.log('[Push] Native token:', token.value)
-    // TODO: Send token to your backend to store for this user
+    // WARNING: Push token is not being sent to the backend.
+    // Notifications will NOT be delivered until this token is persisted
+    // server-side (e.g. via a Supabase edge function or API route) and
+    // used to send messages through FCM/APNs.
+    console.warn(
+      '[Push] Token received but not sent to backend — push notifications are not fully configured. ' +
+      'Implement a backend endpoint to store this token for the current user.'
+    )
   })
 
   PushNotifications.addListener('registrationError', (error) => {
@@ -38,7 +45,12 @@ export async function initPushNotifications() {
   PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
     console.log('[Push] Action:', action.actionId)
     if (action.notification.data?.url) {
-      window.location.href = action.notification.data.url
+      const url = action.notification.data.url
+      if (url.startsWith('/app/') || url.startsWith('/login')) {
+        window.location.href = url
+      } else {
+        console.warn('[Push] Blocked navigation to external URL:', url)
+      }
     }
   })
 }
