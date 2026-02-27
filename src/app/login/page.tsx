@@ -1,9 +1,10 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckSquare, Loader2 } from 'lucide-react'
+import { isNative } from '@/lib/native/platform'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -14,6 +15,34 @@ export default function LoginPage() {
   const [message, setMessage] = useState<string | null>(null)
   const router = useRouter()
   const supabase = createClient()
+
+  useEffect(() => {
+    if (!isNative()) return
+
+    const handleDeepLink = async () => {
+      const { App } = await import('@capacitor/app')
+      App.addListener('appUrlOpen', async ({ url }) => {
+        // URL will be: com.todoer.app://login-callback#access_token=...
+        if (url.includes('login-callback')) {
+          // Extract tokens from the URL fragment
+          const hashParams = new URLSearchParams(url.split('#')[1] || '')
+          const accessToken = hashParams.get('access_token')
+          const refreshToken = hashParams.get('refresh_token')
+
+          if (accessToken && refreshToken) {
+            await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+            router.push('/app/today')
+          }
+
+          // Close the in-app browser
+          const { Browser } = await import('@capacitor/browser')
+          await Browser.close()
+        }
+      })
+    }
+
+    handleDeepLink()
+  }, [router, supabase])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -50,13 +79,37 @@ export default function LoginPage() {
   }
 
   async function handleGoogleLogin() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/app/today`,
-      },
-    })
-    if (error) setError(error.message)
+    if (isNative()) {
+      // On native, use in-app browser for OAuth, redirect back via deep link
+      const { Browser } = await import('@capacitor/browser')
+      const redirectTo = 'com.todoer.app://login-callback'
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true, // Don't let Supabase redirect automatically
+        },
+      })
+
+      if (error) {
+        setError(error.message)
+        return
+      }
+
+      if (data.url) {
+        await Browser.open({ url: data.url })
+      }
+    } else {
+      // Web: existing behavior
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/app/today`,
+        },
+      })
+      if (error) setError(error.message)
+    }
   }
 
   return (
