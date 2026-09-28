@@ -60,8 +60,10 @@ export const TaskItem = forwardRef<HTMLDivElement, TaskItemProps>(function TaskI
 
       <div className="pt-0.5">
         <TaskCheckbox
+          label={`Complete ${task.title}`}
           isCompleted={!!task.is_completed}
           priority={task.priority || 0}
+          disabled={completeTask.isPending}
           onToggle={() => completeTask.mutate({ id: task.id, isCompleted: !task.is_completed })}
         />
       </div>
