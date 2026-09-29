@@ -1,7 +1,7 @@
 import { isNative } from '@/lib/native/platform'
 import { Capacitor } from '@capacitor/core'
 import { reconcileNotifications, type NotificationAdapter } from './reconcile'
-import type { PlannedReminder } from './planner'
+import { REMINDER_PAUSE_TASK_ID, type PlannedReminder } from './planner'
 import { readReminderReceipts } from './receipts'
 import { getNativeReminderStatus, getReminderPolicy } from './policy'
 
@@ -46,8 +46,10 @@ async function adapter(includeProbe = false): Promise<NotificationAdapter> {
     },
     schedule: async reminders => {
       await plugin.schedule({ notifications: reminders.map(n => ({
-        id: n.id, title: n.title, body: 'Open Todoer to complete, snooze or reschedule.',
-        channelId: 'todoer-reminders', actionTypeId: 'todoer-task',
+        id: n.id, title: n.title, body: n.body ?? 'Open Todoer to complete, snooze or reschedule.',
+        channelId: 'todoer-reminders',
+        // The pause notice is not a task, so it gets no Done/Snooze buttons.
+        ...(n.taskId === REMINDER_PAUSE_TASK_ID ? {} : { actionTypeId: 'todoer-task' }),
         ...(sound ? { sound } : {}),
         schedule: { at: new Date(n.at), allowWhileIdle: true },
         extra: { source: SOURCE, taskId: n.taskId, revision: n.revision, at: n.at },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { getReminderPolicy } from '@/lib/reminders/policy'
-import { planReminders, type ReminderInput } from '@/lib/reminders/planner'
+import { getReminderPolicy, REMINDER_QUEUE_LIMIT } from '@/lib/reminders/policy'
+import { planReminders, REMINDER_PAUSE_TASK_ID, type ReminderInput } from '@/lib/reminders/planner'
 
 const now = new Date('2026-09-14T10:00:00').getTime()
 const settings = { quietEnabled: false, quietStart: '22:00', quietEnd: '07:00' }
@@ -18,8 +18,13 @@ describe('platform reminder policy', () => {
     const policy = getReminderPolicy(platform)
     const planned = planReminders([task], { now, settings, ...policy.planning })
     expect(planned.slice(0, 3).map(n => n.at - now)).toEqual(offsets)
-    expect(planned).toHaveLength(32)
+    expect(planned).toHaveLength(REMINDER_QUEUE_LIMIT)
+    expect(planned.at(-1)!.taskId).toBe(REMINDER_PAUSE_TASK_ID)
     expect(planned.every(n => n.at <= now + 86_400_000)).toBe(true)
+  })
+
+  it('leaves room for the device probe under the iPhone pending-notification cap', () => {
+    expect(REMINDER_QUEUE_LIMIT + getReminderPolicy('ios').probeOffsetsMinutes.length).toBeLessThanOrEqual(64)
   })
 
   it.each(['ios', 'android'])('keeps a 24-hour horizon on %s', platform => {

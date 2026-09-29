@@ -1,4 +1,5 @@
-export const REMINDER_QUEUE_LIMIT = 32
+// iOS keeps at most 64 pending local notifications per app; leave room for the 3-alert device probe.
+export const REMINDER_QUEUE_LIMIT = 60
 export const REMINDER_HORIZON_MS = 24 * 60 * 60 * 1000
 
 type ReminderPlatform = 'ios' | 'android' | 'web'
@@ -11,7 +12,7 @@ function makePolicy(platform: ReminderPlatform) {
   const probeOffsetsMinutes = platform === 'ios' ? [1, 2, 3] : platform === 'android' ? [1, 11, 21] : []
   const probeTimes = probeOffsetsMinutes.length ? `${probeOffsetsMinutes[0]}, ${probeOffsetsMinutes[1]} and ${probeOffsetsMinutes[2]} minutes` : ''
   const backgroundSummary = native
-    ? `Background Inbox reminders request intervals of at least ${interval}. Up to ${REMINDER_QUEUE_LIMIT} alerts are queued within ${REMINDER_HORIZON_MS / 3_600_000} hours. They stop when the queue ends; reopen Todoer to refresh it.`
+    ? `Background Inbox reminders request intervals of at least ${interval}. Up to ${REMINDER_QUEUE_LIMIT} alerts are queued within ${REMINDER_HORIZON_MS / 3_600_000} hours. Every task gets its next alert before any repeats. When the queue runs out, a final alert says reminders paused; reopen Todoer to refresh it.`
     : 'Browser reminders need Todoer open.'
   const deliveryCaveat = platform === 'ios'
     ? 'Standard notification sound is requested. iPhone Silent mode, Focus, Scheduled Summary and notification settings can delay or silence alerts.'
@@ -23,7 +24,7 @@ function makePolicy(platform: ReminderPlatform) {
     : 'The background reminder test requires the installed phone app.'
   return {
     platform,
-    planning: { minimumIntervalSeconds, limit: REMINDER_QUEUE_LIMIT, horizonMs: REMINDER_HORIZON_MS },
+    planning: { minimumIntervalSeconds, limit: REMINDER_QUEUE_LIMIT, horizonMs: REMINDER_HORIZON_MS, pauseNotice: native },
     probeOffsetsMinutes,
     backgroundSummary,
     deliveryCaveat,

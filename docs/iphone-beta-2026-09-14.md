@@ -49,7 +49,7 @@ Add Daily as a third destination once occurrences and history work correctly. Fo
 
 ## What iPhone reminders currently mean
 
-The implementation queues **at most 32 task alerts total**, looking no more than 24 hours ahead. That is an app design limit, not a claim about a universal Apple limit. For one overdue task at one-minute intervals, that is roughly half an hour of queued alerts, not a full day. Multiple tasks share that budget; later tasks may have no queued slot until Todoer refreshes. Reopening refreshes the queue.
+The implementation queues **at most 60 alerts total**, looking no more than 24 hours ahead. iOS keeps at most 64 pending local notifications per app, and the 3-alert phone test needs room beside the queue. Every timed task first receives its next alert; only the remaining slots go to repeats, soonest first, so an overdue nag cannot silence a later task. On the phone, one slot is a final "Todoer reminders paused" alert placed where the first persistent repeat did not fit. For one overdue task at one-minute intervals, that is roughly an hour of alerts, then the pause alert. Reopening refreshes the queue and clears a delivered pause alert. (Updated September 28, 2026; previously 32 alerts shared first-come, which could leave a later task with no alert.)
 
 The installed Capacitor local-notifications 8.0.2 Swift implementation submits these as one-off UNTimeIntervalNotificationTrigger requests, with no repeating trigger. Its 60-second guard for repeating triggers is not evidence that a JavaScript process can run every minute after termination. Local notifications do not need a reminder server once submitted. [Capacitor local notifications, checked September 14](https://capacitorjs.com/docs/apis/local-notifications).
 
@@ -94,7 +94,7 @@ Record iPhone model, exact iOS version, build, notification permission, sound/Fo
 
 - Run the 1/2/3-minute probe locked, then with the app terminated, then offline. Cancel before the next alert; repeat while the permission prompt is open.
 - For a timed Inbox task, test Done, delete, Snooze and Reschedule both in the app and from a locked notification. Relaunch and verify task state and no obsolete alerts. Repeat offline and with a rejected database write.
-- Leave one overdue one-minute task unopened until the finite queue ends; reopen and verify replenishment without a burst. Test several simultaneous tasks and a later one-shot reminder.
+- Leave one overdue one-minute task unopened until the finite queue ends; confirm the "reminders paused" alert arrives, has no Done/Snooze buttons, and tapping it just opens Todoer. Reopen and verify replenishment without a burst and that the delivered pause alert is cleared. With the overdue nag running, confirm a later one-shot reminder still fires.
 - Revoke permission; test Silent mode, Focus and Scheduled Summary. Restore permission and check the status shown in Todoer.
 - Cross quiet-hours boundaries, midnight and a device time-zone change. Avoid changing a real daily habit until its migration exists.
 - Start a task-linked focus session; lock, terminate and reopen. Verify recovered time, no duplicate session completion, suppression of that task's reminders, and explicit behavior when the focus period ends.

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PlannedReminder } from '@/lib/reminders/planner'
+import { REMINDER_PAUSE_TASK_ID, type PlannedReminder } from '@/lib/reminders/planner'
 
-interface NativeNotification { id: number; title?: string; sound?: string; extra?: Record<string, unknown>; schedule?: { at: Date; repeats?: boolean } }
+interface NativeNotification { id: number; title?: string; body?: string; actionTypeId?: string; sound?: string; extra?: Record<string, unknown>; schedule?: { at: Date; repeats?: boolean } }
 const device = vi.hoisted(() => ({
   permission: 'granted',
   platform: 'android',
@@ -61,6 +61,14 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('native and foreground one-shot ownership', () => {
+  it('schedules the pause notice with its own text and without task actions', async () => {
+    device.platform = 'ios'
+    const pause: PlannedReminder = { id: 12, taskId: REMINDER_PAUSE_TASK_ID, title: 'Todoer reminders paused', body: 'Open Todoer to keep reminding you.', at: now + 120_000, revision: 'pause:1' }
+    await syncNativeReminders('owner', () => [pause])
+    expect(device.pending).toHaveLength(1)
+    expect(device.pending[0]).toMatchObject({ title: pause.title, body: pause.body, sound: 'default' })
+    expect(device.pending[0].actionTypeId).toBeUndefined()
+  })
   it.each([
     { platform: 'ios', offsets: [60_000, 120_000, 180_000] },
     { platform: 'android', offsets: [60_000, 660_000, 1_260_000] },

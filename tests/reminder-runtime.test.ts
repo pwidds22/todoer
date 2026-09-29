@@ -30,7 +30,7 @@ const runtime = vi.hoisted(() => {
       if (state.nativeWait) await state.nativeWait
       return { ownedOneShotIds: state.ownedOneShotIds }
     }),
-    listenForReminderActions: vi.fn(async () => ({ remove: vi.fn(async () => {}) })),
+    listenForReminderActions: vi.fn(async (_onAction: (taskId: string, action: string) => void) => ({ remove: vi.fn(async () => {}) })),
     reportReminderStatus: vi.fn(),
   }
   const client = {
@@ -61,7 +61,8 @@ vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => runtime.stat
 import { NagReminder } from '@/components/NagReminder'
 import { setReminderSettings, setTaskReminderPreference } from '@/lib/reminders/preferences'
 import { createFocusState, saveFocusState, transitionFocusTimer } from '@/lib/focus-timer'
-import { planReminders } from '@/lib/reminders/planner'
+import { planReminders, REMINDER_PAUSE_TASK_ID } from '@/lib/reminders/planner'
+import { REMINDER_QUEUE_LIMIT } from '@/lib/reminders/policy'
 
 function task(overrides: Partial<Task> = {}): Task {
   return {
@@ -241,7 +242,19 @@ describe('reminder runtime delivery receipts and quiet time', () => {
     mountRuntime()
     await resolveRead(latestRead(), [task()])
     expect(runtime.state.nativePlan[1].at - now).toBe(secondOffset)
-    expect(runtime.state.nativePlan).toHaveLength(32)
+    expect(runtime.state.nativePlan).toHaveLength(REMINDER_QUEUE_LIMIT)
+    expect(runtime.state.nativePlan.at(-1)!.taskId).toBe(REMINDER_PAUSE_TASK_ID)
+  })
+
+  it('ignores the pause notice when it is tapped instead of opening a task', async () => {
+    runtime.state.isNative = true
+    mountRuntime()
+    await resolveRead(latestRead(), [task()])
+    const onAction = runtime.native.listenForReminderActions.mock.calls[0][0]
+    onAction(REMINDER_PAUSE_TASK_ID, 'tap')
+    onAction(REMINDER_PAUSE_TASK_ID, 'done')
+    expect(runtime.selectTask).not.toHaveBeenCalled()
+    expect(runtime.complete).not.toHaveBeenCalled()
   })
 
   it('does not show another one-shot toast after native background delivery and reopening', async () => {

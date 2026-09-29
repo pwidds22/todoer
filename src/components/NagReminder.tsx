@@ -8,7 +8,7 @@ import { useCompleteTask } from '@/hooks/useTasks'
 import { useUIStore } from '@/stores/ui-store'
 import { toast } from 'sonner'
 import type { Task } from '@/types/database'
-import { planReminders, reminderRevision, isQuietTime, type PlannedReminder } from '@/lib/reminders/planner'
+import { planReminders, reminderRevision, isQuietTime, REMINDER_PAUSE_TASK_ID, type PlannedReminder } from '@/lib/reminders/planner'
 import { getReminderSettings, getTaskReminderPreference, setTaskReminderPreference, REMINDER_PREFERENCES_EVENT } from '@/lib/reminders/preferences'
 import { activateReminderAccount, cancelTaskNativeReminders, listenForReminderActions, syncNativeReminders, reportReminderStatus } from '@/lib/reminders/native'
 import { readFocusSuppression } from '@/lib/focus-timer'
@@ -146,7 +146,7 @@ export function NagReminder() {
       }
     }
     const actions = listenForReminderActions((taskId, action) => {
-      if (disposed || taskId === 'device-probe') return
+      if (disposed || taskId === 'device-probe' || taskId === REMINDER_PAUSE_TASK_ID) return
       useUIStore.getState().selectTask(taskId)
       if (action === 'done') completeRef.current.mutate({ id: taskId, isCompleted: true })
       if (action === 'snooze') snooze(taskId)
