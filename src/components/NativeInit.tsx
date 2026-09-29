@@ -36,9 +36,8 @@ export function NativeInit() {
         })
       )
 
-      // Push notifications
-      const { initPushNotifications } = await import('@/lib/native/notifications')
-      await initPushNotifications()
+      // Local reminder permission is requested explicitly from Settings.
+      // Remote push is not configured; do not register an unused FCM token.
 
       // Splash screen — hide after init
       const { SplashScreen } = await import('@capacitor/splash-screen')
