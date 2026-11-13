@@ -35,4 +35,9 @@ next-env.d.ts
 # lockfile (regenerated per platform for tailwind oxide)
 package-lock.json
 
-.vercel
+# local Claude Code settings and worktrees
+.claude/settings.local.json
+.claude/worktrees/
+
+# stray Windows device file
+nul
