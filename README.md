@@ -2,8 +2,6 @@
 
 A task manager with reminders that keep nagging you until you deal with the task.
 
-**Live app:** https://todoer-ruby.vercel.app
-
 ## What it does
 
 - Add tasks in plain language, such as "Call the dentist tomorrow at 10am p1 #health @calls". The app reads the date, time, priority, project, label and repeat pattern.
@@ -19,7 +17,6 @@ A task manager with reminders that keep nagging you until you deal with the task
 - TanStack Query and Zustand for data and UI state
 - chrono-node and rrule for date parsing and recurring tasks
 - [Capacitor](https://capacitorjs.com) to package the same web app for iOS and Android, built in GitHub Actions
-- Hosted on Vercel
 
 Built with [Claude Code](https://claude.com/claude-code).
 
