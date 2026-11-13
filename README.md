@@ -2,8 +2,6 @@
 
 A task manager with reminders that keep nagging you until you deal with the task.
 
-**Live app:** https://todoer-ruby.vercel.app
-
 <img src="docs/screenshot-task-detail.png" alt="Task detail on a phone, with Done, Reschedule and Snooze controls for a repeating reminder" width="300">
 
 ## What it does
@@ -22,7 +20,6 @@ A task manager with reminders that keep nagging you until you deal with the task
 - chrono-node and rrule for date parsing and recurring tasks
 - [Capacitor](https://capacitorjs.com) to package the same web app for iOS and Android
 - Vitest for unit tests, with GitHub Actions running checks
-- Hosted on Vercel
 
 Built with [Claude Code](https://claude.com/claude-code).
 
