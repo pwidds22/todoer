@@ -35,4 +35,9 @@ next-env.d.ts
 
 # Commit the lockfile so local and CI installs use the same dependency versions.
 
-.vercel
+# local Claude Code settings and worktrees
+.claude/settings.local.json
+.claude/worktrees/
+
+# stray Windows device file
+nul
