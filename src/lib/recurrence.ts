@@ -12,6 +12,10 @@
  *   FREQ=MONTHLY;BYMONTHDAY=N (specific day of month, 1-31)
  *   FREQ=YEARLY
  *   FREQ=YEARLY;INTERVAL=N
+ *
+ * This is a supported subset, not a full RRULE engine. Limits such as COUNT and
+ * UNTIL are rejected. Monthly rules without BYMONTHDAY use the previous date's
+ * day and can drift after a short month; preserving an original anchor is deferred.
  */
 
 const DAY_NAMES: Record<string, string> = {
@@ -83,6 +87,44 @@ export function parseRRule(rule: string): RRuleParts {
   }
 }
 
+/** Validate all fields before date calculation; display parsing stays tolerant so
+ * a saved unsupported rule can still be opened and replaced in the task editor. */
+function parseSupportedSchedule(rule: string): RRuleParts {
+  const fields = new Map<string, string>()
+  for (const segment of rule.split(';')) {
+    const pair = segment.split('=').map(value => value.trim())
+    if (pair.length !== 2 || !pair[0] || !pair[1]) {
+      throw new Error('Invalid repeat schedule. Edit the repeat schedule before completing this task.')
+    }
+    const [key, value] = pair
+    if (!['FREQ', 'INTERVAL', 'BYDAY', 'BYMONTHDAY'].includes(key)) {
+      throw new Error(`Unsupported repeat schedule field: ${key}. Edit the repeat schedule before completing this task.`)
+    }
+    if (fields.has(key)) throw new Error(`Invalid repeat schedule: ${key} appears more than once.`)
+    fields.set(key, value)
+  }
+
+  const freq = fields.get('FREQ') ?? ''
+  if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(freq)) {
+    throw new Error('Unsupported repeat schedule. Choose a daily, weekly, monthly or yearly repeat.')
+  }
+  const intervalText = fields.get('INTERVAL') ?? '1'
+  const interval = Number(intervalText)
+  if (!/^\d+$/.test(intervalText) || !Number.isSafeInteger(interval) || interval < 1 || interval > 1000) {
+    throw new Error('Invalid repeat interval. Choose a whole number from 1 to 1000.')
+  }
+  const byDay = fields.get('BYDAY') ?? null
+  if (byDay !== null && (freq !== 'WEEKLY' || byDay.split(',').some(day => !Object.hasOwn(DAY_MAP, day)))) {
+    throw new Error('Unsupported repeat weekdays. Choose weekdays in a weekly repeat schedule.')
+  }
+  const monthDayText = fields.get('BYMONTHDAY')
+  const byMonthDay = monthDayText === undefined ? null : Number(monthDayText)
+  if (monthDayText !== undefined && (freq !== 'MONTHLY' || !/^\d+$/.test(monthDayText) || !Number.isInteger(byMonthDay) || byMonthDay! < 1 || byMonthDay! > 31)) {
+    throw new Error('Unsupported repeat day of month. Choose a day from 1 to 31 in a monthly repeat schedule.')
+  }
+  return { freq, interval, byDay, byMonthDay }
+}
+
 /**
  * Calculate the next occurrence date from a recurrence rule.
  *
@@ -94,12 +136,13 @@ export function getNextOccurrence(
   recurrenceRule: string,
   currentDueDate: string
 ): string {
-  const { freq, interval, byDay, byMonthDay } = parseRRule(recurrenceRule)
+  const { freq, interval, byDay, byMonthDay } = parseSupportedSchedule(recurrenceRule)
 
   // Parse the current due date into year/month/day components to avoid
   // timezone issues. We work entirely in date-only (no time) space.
   const [year, month, day] = currentDueDate.split('-').map(Number)
   const date = new Date(year, month - 1, day)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(currentDueDate) || formatDate(date) !== currentDueDate) throw new Error('Invalid repeat date')
 
   switch (freq) {
     case 'DAILY': {
@@ -108,7 +151,15 @@ export function getNextOccurrence(
     }
 
     case 'WEEKLY': {
-      if (byDay && DAY_MAP[byDay] !== undefined) {
+      if (byDay?.includes(',')) {
+        const weekdays = byDay.split(',').map(d => DAY_MAP[d])
+        if (weekdays.some(d => d === undefined)) throw new Error('Invalid weekday')
+        // Weeks begin Monday. Visit the remaining selected days, then the next active week.
+        const currentWeekday = (date.getDay() + 6) % 7
+        const later = weekdays.map(d => (d + 6) % 7).filter(d => d > currentWeekday).sort((a, b) => a - b)
+        const days = later.length ? later[0] - currentWeekday : 7 * interval - currentWeekday + Math.min(...weekdays.map(d => (d + 6) % 7))
+        date.setDate(date.getDate() + days)
+      } else if (byDay && DAY_MAP[byDay] !== undefined) {
         // Advance to the next occurrence of the specified day of week.
         // If the current date is already that day, jump ahead by the
         // interval number of weeks.
@@ -165,12 +216,11 @@ export function getNextOccurrence(
     }
 
     default: {
-      // Unknown frequency -- fall back to daily.
-      date.setDate(date.getDate() + interval)
-      break
+      throw new Error('Unsupported repeat schedule.')
     }
   }
 
+  if (!Number.isFinite(date.getTime())) throw new Error('Repeat date is out of range')
   return formatDate(date)
 }
 
@@ -187,9 +237,9 @@ function formatDate(date: Date): string {
 /**
  * Calculate the next due date for a recurring task based on recurrence type.
  *
- * - "fixed" recurrence: the next date is calculated from the original due date,
- *   so the cadence stays anchored to the original schedule regardless of when
- *   the task was actually completed.
+ * - "fixed" recurrence: the next date is calculated from the current occurrence's
+ *   due date rather than completion time. A monthly rule without BYMONTHDAY has
+ *   no separate original-day anchor after a short month clamps that due date.
  *
  * - "floating" recurrence: the next date is calculated from today, so if the
  *   user completes a weekly task 3 days late, the next occurrence is a full
@@ -203,21 +253,24 @@ function formatDate(date: Date): string {
 export function calculateNextDueDate(
   recurrenceRule: string,
   currentDueDate: string | null,
-  recurrenceType: string | null
+  recurrenceType: string | null,
+  now = new Date()
 ): string {
   const type = recurrenceType || 'fixed'
-  const today = formatDate(new Date())
+  const today = formatDate(now)
 
-  if (type === 'floating' || !currentDueDate) {
+  if (type === 'floating' || type === 'after_completion' || !currentDueDate) {
     // Floating: calculate from today.
     return getNextOccurrence(recurrenceRule, today)
   }
 
-  // Fixed: calculate from the original due date. If the computed next
+  // Fixed: calculate from the current occurrence's due date. If the computed next
   // date is in the past (because the task was overdue), keep advancing
   // until we land on a future date.
   let nextDate = getNextOccurrence(recurrenceRule, currentDueDate)
+  let attempts = 0
   while (nextDate <= today) {
+    if (++attempts > 36600) throw new Error('Repeat schedule is too far in the past. Reschedule this task first.')
     nextDate = getNextOccurrence(recurrenceRule, nextDate)
   }
 

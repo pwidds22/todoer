@@ -5,6 +5,7 @@
 
 # testing
 /coverage
+/.playwright-mcp/
 
 # next.js
 /.next/
@@ -32,8 +33,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# lockfile (regenerated per platform for tailwind oxide)
-package-lock.json
+# Commit the lockfile so local and CI installs use the same dependency versions.
 
 # local Claude Code settings and worktrees
 .claude/settings.local.json

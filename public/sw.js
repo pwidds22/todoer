@@ -1,7 +1,6 @@
-// Todoer Service Worker v2
-// Handles offline caching, push notifications, and background sync
+// Todoer app-shell caching and push receiver. No background task-sync engine.
 
-const CACHE_NAME = 'todoer-v3';
+const CACHE_NAME = 'todoer-v4';
 const STATIC_ASSETS = [
   '/',
   '/app/today',
@@ -12,8 +11,6 @@ const STATIC_ASSETS = [
   '/icons/icon-192x192.svg',
   '/icons/icon-512x512.svg',
 ];
-
-// API responses now use network-first (same CACHE_NAME) for data freshness
 
 // Install: pre-cache the app shell
 self.addEventListener('install', (event) => {
@@ -31,7 +28,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => name.startsWith('todoer-') && name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       );
     })
@@ -47,17 +44,9 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   if (!url.protocol.startsWith('http')) return;
 
-  // Supabase API calls: network-first (ensures fresh data after mutations)
-  if (url.hostname.includes('supabase.co') && url.pathname.startsWith('/rest/')) {
-    event.respondWith(networkFirst(request));
-    return;
-  }
-
-  // Next.js API routes: network-first
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/_next/data/')) {
-    event.respondWith(networkFirst(request));
-    return;
-  }
+  // Never put authenticated data into the origin-wide cache. A cached REST
+  // response can otherwise be shown to the next account on this device.
+  if (url.origin !== self.location.origin || request.headers.has('authorization') || url.pathname.startsWith('/api/')) return;
 
   // Static assets: cache-first
   if (
@@ -165,7 +154,11 @@ self.addEventListener('notificationclick', (event) => {
 
   if (event.action === 'dismiss') return;
 
-  const targetUrl = event.notification.data?.url || '/app/today';
+  let candidate;
+  try { candidate = new URL(event.notification.data?.url || '/app/today', self.location.origin); }
+  catch { candidate = new URL('/app/today', self.location.origin); }
+  const targetUrl = candidate.origin === self.location.origin && candidate.pathname.startsWith('/app/')
+    ? candidate.href : new URL('/app/today', self.location.origin).href;
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {

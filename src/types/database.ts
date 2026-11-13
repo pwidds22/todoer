@@ -74,6 +74,7 @@ export type Database = {
           id: string
           is_archived: boolean | null
           nag_enabled: boolean | null
+          nag_interval: number | null
           name: string
           position: number | null
           reminder_time: string | null
@@ -90,6 +91,7 @@ export type Database = {
           id?: string
           is_archived?: boolean | null
           nag_enabled?: boolean | null
+          nag_interval?: number | null
           name: string
           position?: number | null
           reminder_time?: string | null
@@ -106,6 +108,7 @@ export type Database = {
           id?: string
           is_archived?: boolean | null
           nag_enabled?: boolean | null
+          nag_interval?: number | null
           name?: string
           position?: number | null
           reminder_time?: string | null

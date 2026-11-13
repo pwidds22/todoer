@@ -33,7 +33,7 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: 'automatic',
     preferredContentMode: 'mobile',
-    scheme: 'Todoer',
+    scheme: 'App',
   },
 }
 

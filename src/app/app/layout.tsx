@@ -11,7 +11,7 @@ import { KeyboardShortcuts } from '@/components/KeyboardShortcuts'
 import { AuthGuard } from '@/components/AuthGuard'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { setSidebarOpen, taskDetailOpen, selectedTaskId, selectTask, theme } = useUIStore()
+  const { sidebarOpen, setSidebarOpen, taskDetailOpen, selectedTaskId, selectTask, theme } = useUIStore()
 
   // Apply theme class to <html> and persist
   useEffect(() => {
@@ -44,7 +44,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <main className="flex-1 flex flex-col overflow-hidden">
           {/* Mobile header */}
           <div className="md:hidden flex items-center gap-2 p-3 border-b border-border">
-            <button onClick={() => setSidebarOpen(true)} className="p-1 hover:bg-accent rounded">
+            <button type="button" aria-label="Open sidebar" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)} className="p-1 hover:bg-accent rounded">
               <Menu className="h-5 w-5" />
             </button>
           </div>
@@ -57,7 +57,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Task detail slide-in panel */}
         {taskDetailOpen && selectedTaskId && (
-          <TaskDetail taskId={selectedTaskId} onClose={() => selectTask(null)} />
+          <TaskDetail key={selectedTaskId} taskId={selectedTaskId} onClose={() => selectTask(null)} />
         )}
 
         {/* Nag reminder system (headless) */}

@@ -8,9 +8,11 @@ interface TaskCheckboxProps {
   isCompleted: boolean
   priority: number
   onToggle: () => void
+  label?: string
+  disabled?: boolean
 }
 
-export function TaskCheckbox({ isCompleted, priority, onToggle }: TaskCheckboxProps) {
+export function TaskCheckbox({ isCompleted, priority, onToggle, label = 'Task completion', disabled = false }: TaskCheckboxProps) {
   const [animating, setAnimating] = useState(false)
 
   function handleClick(e: React.MouseEvent) {
@@ -24,6 +26,11 @@ export function TaskCheckbox({ isCompleted, priority, onToggle }: TaskCheckboxPr
 
   return (
     <button
+      type="button"
+      role="checkbox"
+      aria-checked={isCompleted}
+      aria-label={label}
+      disabled={disabled}
       onClick={handleClick}
       className={cn(
         'h-[18px] w-[18px] rounded-full border-2 flex items-center justify-center shrink-0 transition-all',

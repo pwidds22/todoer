@@ -8,13 +8,67 @@ export interface ParsedTask {
   projectName: string | null
   labelNames: string[]
   recurrence: string | null
+  reminderMode: 'off' | 'once' | 'persistent'
+  reminderIntervalSeconds: number | null
+  ambiguousTime: { text: string; am: string; pm: string } | null
+  warnings: string[]
+  requiresReview: boolean
 }
 
-export function parseTaskInput(input: string): ParsedTask {
+export function parseTaskInput(input: string, referenceDate = new Date()): ParsedTask {
   let text = input.trim()
   let priority = 0
   const labelNames: string[] = []
   let projectName: string | null = null
+  const warnings: string[] = []
+  let requiresReview = false
+  let reminderMode: ParsedTask['reminderMode'] = 'off'
+  let reminderIntervalSeconds: number | null = null
+
+  // Parse reminder intent before recurrence/date extraction so "every minute"
+  // cannot become a recurring task or an unrelated relative due date.
+  const negatedReminder = /\b(?:do\s+not|don['’]t|never)\s+(?:remind|nag)\s+me\b/i.test(text)
+  const repeatedReminder = /\b(?:and\s+)?(?:remind|nag)\s+me\s+every\s+(?:(\d+(?:\.\d+)?|[a-z]+)\s+)?(minutes?|mins?|hours?|hrs?|days?|seconds?)\b(?:\s+until\s+(?:it(?:['’]s|\s+is)?\s+)?(?:done|complete(?:d)?))?[.!]?/i
+  const repeatMatch = text.match(repeatedReminder)
+  if (negatedReminder) {
+    warnings.push('Reminders are off because the reminder wording includes a negation. Review the title and reminder choice.')
+    requiresReview = true
+    // Keep the original wording available for review, without interpreting a
+    // reminder interval as a task recurrence or due date.
+    if (repeatMatch) text = text.replace(repeatMatch[0], '')
+  } else if (repeatMatch) {
+    reminderMode = 'persistent'
+    const words: Record<string, number> = { one: 1, two: 2, five: 5, ten: 10, fifteen: 15, thirty: 30, sixty: 60 }
+    const amount = repeatMatch[1] ? (words[repeatMatch[1].toLowerCase()] ?? Number(repeatMatch[1])) : 1
+    const unit = repeatMatch[2].toLowerCase()
+    const seconds = amount * (/^h/.test(unit) ? 3600 : /^m/.test(unit) ? 60 : /^d/.test(unit) ? 86400 : 1)
+    if ([60, 120, 300, 600, 900, 1800, 3600].includes(seconds)) {
+      reminderIntervalSeconds = seconds
+    } else {
+      warnings.push('That reminder interval is not supported. Choose an interval below, or turn reminders off.')
+    }
+    text = text.replace(repeatMatch[0], '').trim()
+  } else {
+    const untilDone = /\b(?:and\s+)?(?:remind|nag)\s+me\s+until\s+(?:it(?:['’]s|\s+is)?\s+)?(?:done|complete(?:d)?)\b[.!]?/i
+    if (untilDone.test(text)) {
+      reminderMode = 'persistent'
+      warnings.push('Choose how often to remind you until this task is done.')
+      text = text.replace(untilDone, '').trim()
+    } else if (/\b(?:remind|nag)\s+me\s+every\b/i.test(text)) {
+      warnings.push('The reminder wording was not understood. Reminders are off; choose a reminder and interval below if you want one.')
+      requiresReview = true
+    } else if (/\bremind\s+me\b/i.test(text)) {
+      reminderMode = 'once'
+      text = text.replace(/\b(?:and\s+)?remind\s+me(?:\s+to)?\b/i, '').trim()
+    }
+  }
+
+  // Multi-task capture is intentionally bounded: common second action clauses
+  // and separators ask the person to review the single task being created.
+  if (/[;\n]/.test(text) || /\b(?:and|then)\s+(?:call|buy|email|send|book|pay|pick|take|clean|schedule|finish|write|walk|read|make|do|check)\b/i.test(text)) {
+    warnings.push('This may contain more than one task. Only one task will be saved; edit the title or add tasks separately.')
+    requiresReview = true
+  }
 
   // Extract priority: p1, p2, p3, p4, !, !!, !!!, !!!!
   const priorityMatch = text.match(/\bp([1-4])\b/i)
@@ -67,12 +121,22 @@ export function parseTaskInput(input: string): ParsedTask {
     { regex: /\bevery\s+(\d+)\s+months?\b/i, rule: 'FREQ=MONTHLY;INTERVAL=$1' },
   ]
 
-  for (const pattern of recurrencePatterns) {
-    const match = text.match(pattern.regex)
-    if (match) {
-      recurrence = pattern.rule.replace('$1', match[1] || '')
-      text = text.replace(match[0], '').trim()
-      break
+  const recurrenceMatches = recurrencePatterns.reduce((count, pattern) =>
+    count + [...text.matchAll(new RegExp(pattern.regex.source, 'gi'))].length, 0)
+  const recurrenceNeedsReview = recurrenceMatches > 1 || (recurrenceMatches > 0 &&
+    /(?:\band\b|\bor\b|,)\s+(?:every\s+)?(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b/i.test(text))
+
+  if (recurrenceNeedsReview) {
+    warnings.push('There is more than one repeat day or pattern. Choose the full schedule under Repeat and review the due date.')
+    requiresReview = true
+  } else {
+    for (const pattern of recurrencePatterns) {
+      const match = text.match(pattern.regex)
+      if (match) {
+        recurrence = pattern.rule.replace('$1', match[1] || '')
+        text = text.replace(match[0], '').trim()
+        break
+      }
     }
   }
 
@@ -94,9 +158,16 @@ export function parseTaskInput(input: string): ParsedTask {
   // Parse dates with chrono
   let dueDate: string | null = null
   let dueTime: string | null = null
+  let ambiguousTime: ParsedTask['ambiguousTime'] = null
 
-  const parsed = chrono.parse(text, new Date(), { forwardDate: true })
-  if (parsed.length > 0) {
+  const parsed = recurrenceNeedsReview ? [] : chrono.parse(text, referenceDate, { forwardDate: true })
+  const ambiguousDates = parsed.length > 1 || parsed.some(result => result.end)
+  if (ambiguousDates) {
+    warnings.push(parsed.length > 1
+      ? 'I found multiple dates. Choose one due date and time below, or leave them empty. Only one task will be saved.'
+      : 'I found a date or time range. Choose one due date and time below, or leave them empty; task ranges are not supported.')
+    requiresReview = true
+  } else if (parsed.length === 1) {
     const result = parsed[0]
     const date = result.start.date()
 
@@ -105,8 +176,22 @@ export function parseTaskInput(input: string): ParsedTask {
       String(date.getDate()).padStart(2, '0')
 
     if (result.start.isCertain('hour')) {
-      dueTime = String(date.getHours()).padStart(2, '0') + ':' +
-        String(date.getMinutes()).padStart(2, '0')
+      const hour = date.getHours()
+      const minutes = String(date.getMinutes()).padStart(2, '0')
+      const needsMeridiem = !result.start.isCertain('meridiem') && hour >= 1 && hour <= 12 &&
+        !/\b(?:noon|midnight|in|within|after|ago|later)\b/i.test(result.text)
+      if (needsMeridiem) {
+        ambiguousTime = {
+          text: result.text,
+          am: String(hour % 12).padStart(2, '0') + ':' + minutes,
+          pm: String(hour % 12 + 12).padStart(2, '0') + ':' + minutes,
+        }
+        // A date inferred from an assumed AM time could change when PM is
+        // selected. Require an explicit date instead of carrying that guess.
+        if (!result.start.isCertain('day') && !result.start.isCertain('weekday')) dueDate = null
+      } else {
+        dueTime = String(hour).padStart(2, '0') + ':' + minutes
+      }
     }
 
     // Remove the date text from the title
@@ -116,11 +201,11 @@ export function parseTaskInput(input: string): ParsedTask {
 
   // If monthly recurrence has BYMONTHDAY but no date was parsed by chrono,
   // compute the due date as that day of the current or next month.
-  if (recurrence && !dueDate) {
+  if (recurrence && !dueDate && !ambiguousDates) {
     const byMonthDayMatch = recurrence.match(/BYMONTHDAY=(\d{1,2})/)
     if (byMonthDayMatch) {
       const targetDay = parseInt(byMonthDayMatch[1], 10)
-      const now = new Date()
+      const now = referenceDate
       let year = now.getFullYear()
       let month = now.getMonth() // 0-indexed
 
@@ -160,5 +245,10 @@ export function parseTaskInput(input: string): ParsedTask {
     projectName,
     labelNames,
     recurrence,
+    reminderMode,
+    reminderIntervalSeconds,
+    ambiguousTime,
+    warnings,
+    requiresReview,
   }
 }

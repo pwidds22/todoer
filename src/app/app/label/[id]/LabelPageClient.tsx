@@ -1,35 +1,35 @@
 'use client'
 
-import { use } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useQuery } from '@tanstack/react-query'
 import { TaskList } from '@/components/tasks/TaskList'
 import { CircleDot } from 'lucide-react'
 
-export default function LabelPageClient({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+export default function LabelPageClient({ id }: { id: string }) {
   const supabase = createClient()
 
-  const { data: label } = useQuery({
+  const { data: label, isError: labelError } = useQuery({
     queryKey: ['labels', id],
     queryFn: async () => {
-      const { data } = await supabase.from('labels').select('*').eq('id', id).single()
+      const { data, error } = await supabase.from('labels').select('*').eq('id', id).single()
+      if (error) throw error
       return data as { id: string; name: string; color: string | null } | null
     },
   })
 
-  const { data: tasks, isLoading } = useQuery({
+  const { data: tasks, isLoading, isError: tasksError } = useQuery({
     queryKey: ['tasks', 'label', id],
     queryFn: async () => {
-      const { data: taskLabels } = await supabase
+      const { data: taskLabels, error: taskLabelsError } = await supabase
         .from('task_labels')
         .select('task_id')
         .eq('label_id', id)
 
+      if (taskLabelsError) throw taskLabelsError
       if (!taskLabels?.length) return []
 
       const taskIds = taskLabels.map((tl: { task_id: string }) => tl.task_id)
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('tasks')
         .select('*, project:projects(*)')
         .in('id', taskIds)
@@ -37,9 +37,14 @@ export default function LabelPageClient({ params }: { params: Promise<{ id: stri
         .eq('is_completed', false)
         .order('due_date', { ascending: true })
 
+      if (error) throw error
       return data || []
     },
   })
+
+  if (labelError || tasksError) {
+    return <p className="max-w-3xl mx-auto p-6 text-sm text-muted-foreground" role="alert">This label could not be loaded. Check your connection or choose another label from the sidebar.</p>
+  }
 
   return (
     <div className="max-w-3xl mx-auto p-6">

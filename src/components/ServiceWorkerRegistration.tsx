@@ -11,20 +11,33 @@ export function ServiceWorkerRegistration() {
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
     if (isNative()) return // Native apps don't need a Service Worker
+    if (process.env.NODE_ENV !== 'production') {
+      // Dev bundle URLs are reused. Caching them can hide code changes on reload.
+      void navigator.serviceWorker.getRegistrations().then(registrations => Promise.all(
+        registrations.filter(registration => registration.active?.scriptURL === new URL('/sw.js', location.origin).href)
+          .map(registration => registration.unregister())
+      )).catch(() => {})
+      void caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('todoer-')).map(key => caches.delete(key)))).catch(() => {})
+      return
+    }
+
+    let disposed = false
+    let updateTimer: ReturnType<typeof setInterval> | undefined
 
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
-        console.log('[SW] Service worker registered, scope:', registration.scope)
+        if (disposed) return
 
         // Check for updates periodically (every 60 minutes)
-        setInterval(() => {
-          registration.update()
+        updateTimer = setInterval(() => {
+          void registration.update().catch(() => {})
         }, 1000 * 60 * 60)
       })
       .catch((error) => {
         console.error('[SW] Service worker registration failed:', error)
       })
+    return () => { disposed = true; if (updateTimer) clearInterval(updateTimer) }
   }, [])
 
   return null

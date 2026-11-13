@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useProject, useSections, useCreateSection, useDeleteProject } from '@/hooks/useProjects'
 import { useTasks } from '@/hooks/useTasks'
 import { TaskList } from '@/components/tasks/TaskList'
@@ -14,9 +14,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useAcceptedConnections, useProjectShares, useShareProject, useUnshareProject } from '@/hooks/useSharing'
 import { useAuth } from '@/hooks/useAuth'
 
-export default function ProjectPageClient({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
-  const { data: project } = useProject(id)
+export default function ProjectPageClient({ id }: { id: string }) {
+  const { data: project, isLoading: projectLoading, isError: projectError } = useProject(id)
   const { data: tasks, isLoading } = useTasks({ projectId: id, isCompleted: false })
   const { data: sections } = useSections(id)
   const updateProject = useUpdateProject()
@@ -78,6 +77,10 @@ export default function ProjectPageClient({ params }: { params: Promise<{ id: st
         },
       }
     )
+  }
+
+  if (projectError || (!projectLoading && !project)) {
+    return <p className="max-w-3xl mx-auto p-6 text-sm text-muted-foreground" role="alert">This project could not be loaded. Check your connection or choose another project from the sidebar.</p>
   }
 
   if (!project) {

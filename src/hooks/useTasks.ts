@@ -1,12 +1,61 @@
 'use client'
 
 import { createClient } from '@/lib/supabase/client'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import type { Task, TaskInsert, TaskUpdate, Project } from '@/types/database'
-import { calculateNextDueDate } from '@/lib/recurrence'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import type { Task, TaskInsert, Project } from '@/types/database'
+import { createSupabaseTaskRepository, createTaskMutations, RecurrenceInsertError, runTaskMutation, type TaskCompletion, type TaskEdit } from '@/lib/task-mutations'
+import { cancelTaskNativeReminders } from '@/lib/reminders/native'
+import { getTaskReminderPreference, setTaskReminderPreference } from '@/lib/reminders/preferences'
+import { localDateKey } from '@/lib/dates'
+import { useLocalDate } from '@/hooks/useLocalDate'
+import { useAuth } from '@/hooks/useAuth'
 import { toast } from 'sonner'
 
 const supabase = createClient()
+const taskRepository = createSupabaseTaskRepository(supabase)
+const taskMutations = createTaskMutations(taskRepository)
+
+const mutationLifecycle = {
+  phase(id: string, phase: 'start' | 'settled') {
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('todoer:task-mutation', { detail: { id, phase } }))
+  },
+  cancel: cancelTaskNativeReminders,
+  saved() {
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('todoer:tasks-changed'))
+  },
+}
+
+function mutateTask<T>(id: string, operation: () => Promise<T>) {
+  return runTaskMutation(id, operation, mutationLifecycle)
+}
+
+function invalidateTasks(client: QueryClient) {
+  return Promise.all([
+    client.invalidateQueries({ queryKey: ['tasks'] }),
+    client.invalidateQueries({ queryKey: ['subtasks'] }),
+  ])
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Could not save. Please refresh and try again.'
+}
+
+async function requireCurrentAccount(userId: string | undefined) {
+  const { data, error } = await supabase.auth.getSession()
+  if (error) throw error
+  if (!userId || data.session?.user.id !== userId) throw new Error('Sign in to the same account before retrying this change.')
+}
+
+async function copyLocalReminder(source: Task, next: Task, userId: string | undefined) {
+  if (!userId || source.user_id !== userId) return
+  try {
+    await requireCurrentAccount(userId)
+    const preference = getTaskReminderPreference(userId, source.id)
+    if (preference.enabled) setTaskReminderPreference(userId, next.id, { ...preference, snoozeUntil: null })
+  } catch (error) {
+    toast.error('Next task saved, but its reminder could not be set.', { description: errorMessage(error) })
+  }
+}
 
 export function useTasks(filters?: {
   projectId?: string
@@ -73,9 +122,9 @@ export function useTasksByDate(date: string) {
 }
 
 export function useTodayTasks() {
-  const today = new Date().toISOString().split('T')[0]
+  const today = useLocalDate()
   return useQuery({
-    queryKey: ['tasks', 'today'],
+    queryKey: ['tasks', 'today', today],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tasks')
@@ -95,10 +144,12 @@ export function useTodayTasks() {
 }
 
 export function useUpcomingTasks() {
-  const today = new Date().toISOString().split('T')[0]
-  const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+  const today = useLocalDate()
+  const end = new Date(`${today}T12:00:00`)
+  end.setDate(end.getDate() + 7)
+  const nextWeek = localDateKey(end)
   return useQuery({
-    queryKey: ['tasks', 'upcoming'],
+    queryKey: ['tasks', 'upcoming', today, nextWeek],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tasks')
@@ -140,168 +191,105 @@ export function useCreateTask() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (task: TaskInsert) => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .insert(task)
-        .select()
-        .single()
-
-      if (error) throw error
-      return data as Task
+      const id = task.id ?? crypto.randomUUID()
+      return mutateTask(id, () => taskRepository.insert({ ...task, id }))
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
-    },
+    onSettled: () => invalidateTasks(queryClient),
   })
 }
 
 export function useUpdateTask() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, ...updates }: TaskUpdate & { id: string }) => {
-      const { data, error } = await supabase
-        .from('tasks')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single()
-
-      if (error) throw error
-      return data as Task
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
-      queryClient.invalidateQueries({ queryKey: ['subtasks'] })
-    },
+    mutationFn: (edit: TaskEdit) => mutateTask(edit.id, () => taskMutations.update(edit)),
+    onSettled: () => invalidateTasks(queryClient),
   })
 }
 
 export function useCompleteTask() {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  function showCompletion(completed: Task) {
+    if (completed.recurrence_rule) {
+      toast('Task completed', { description: `${completed.title}. Undo is unavailable for recurring tasks.` })
+      return
+    }
+    toast('Task completed', {
+      description: completed.title,
+      action: {
+        label: 'Undo',
+        onClick: async () => {
+          try {
+            await requireCurrentAccount(user?.id)
+            await mutateTask(completed.id, () => taskMutations.complete({ id: completed.id, isCompleted: false, expectedUpdatedAt: completed.updated_at }))
+          } catch (error) { toast.error(errorMessage(error)) }
+          finally { await invalidateTasks(queryClient) }
+        },
+      },
+    })
+  }
+
+  function showRecurrenceRetry(error: RecurrenceInsertError) {
+    const toastId = `recurrence-${error.completedTask.id}`
+    toast.error('Task completed; next task still needs saving', {
+      id: toastId,
+      description: 'Keep this page open and retry to confirm the next occurrence. Your completed task has been kept.',
+      duration: Infinity,
+      dismissible: false,
+      action: {
+        label: 'Retry next task',
+        onClick: async event => {
+          // Sonner dismisses action toasts synchronously unless this is prevented.
+          event.preventDefault()
+          toast.loading('Saving the next occurrence…', { id: toastId, action: undefined, dismissible: false })
+          try {
+            await requireCurrentAccount(user?.id)
+            const next = await mutateTask(error.pending.nextTask.id, () => taskMutations.retryRecurrence(error.pending))
+            await copyLocalReminder(error.completedTask, next, user?.id)
+            toast.success('Next occurrence saved', { id: toastId, duration: 4000, action: undefined, dismissible: true })
+          } catch (retryError) {
+            toast.error(errorMessage(retryError))
+            showRecurrenceRetry(error)
+          } finally { await invalidateTasks(queryClient) }
+        },
+      },
+    })
+  }
+
   return useMutation({
-    mutationFn: async ({ id, isCompleted }: { id: string; isCompleted: boolean }) => {
-      // Complete (or uncomplete) the current task.
-      const { data, error } = await supabase
-        .from('tasks')
-        .update({
-          is_completed: isCompleted,
-          completed_at: isCompleted ? new Date().toISOString() : null,
-        })
-        .eq('id', id)
-        .select()
-        .single()
-
-      if (error) throw error
-
-      const completedTask = data as Task
-
-      // If we are completing a recurring task, create the next occurrence.
-      if (isCompleted && completedTask.recurrence_rule) {
-        const nextDueDate = calculateNextDueDate(
-          completedTask.recurrence_rule,
-          completedTask.due_date,
-          completedTask.recurrence_type
-        )
-
-        const nextTask: TaskInsert = {
-          user_id: completedTask.user_id,
-          title: completedTask.title,
-          description: completedTask.description,
-          priority: completedTask.priority,
-          project_id: completedTask.project_id,
-          section_id: completedTask.section_id,
-          parent_id: completedTask.parent_id,
-          due_date: nextDueDate,
-          due_time: completedTask.due_time,
-          start_date: completedTask.start_date,
-          start_time: completedTask.start_time,
-          duration_minutes: completedTask.duration_minutes,
-          recurrence_rule: completedTask.recurrence_rule,
-          recurrence_type: completedTask.recurrence_type,
-          nag_enabled: completedTask.nag_enabled,
-          nag_interval: completedTask.nag_interval,
-          reminder_enabled: completedTask.reminder_enabled,
-          position: completedTask.position,
-          is_completed: false,
-          completed_at: null,
-          is_deleted: false,
-        }
-
-        const { error: insertError } = await supabase
-          .from('tasks')
-          .insert(nextTask)
-
-        if (insertError) throw insertError
-      }
-
-      return completedTask
+    mutationFn: async (completion: TaskCompletion) => {
+      const result = await mutateTask(completion.id, () => taskMutations.complete(completion))
+      if (result.nextTask) await copyLocalReminder(result.task, result.nextTask, user?.id)
+      if (result.changed && result.task.is_completed) showCompletion(result.task)
+      return result.task
     },
-    onSuccess: (completedTask) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
-      queryClient.invalidateQueries({ queryKey: ['subtasks'] })
-
-      // Show undo toast when completing (not uncompleting)
-      if (completedTask.is_completed) {
-        toast(`Task completed`, {
-          description: completedTask.title,
-          action: {
-            label: 'Undo',
-            onClick: async () => {
-              // If a recurring task spawned a next occurrence, delete it
-              if (completedTask.recurrence_rule) {
-                const { data: nextTasks } = await supabase
-                  .from('tasks')
-                  .select('id')
-                  .eq('title', completedTask.title)
-                  .eq('is_completed', false)
-                  .eq('is_deleted', false)
-                  .neq('id', completedTask.id)
-                  .order('created_at', { ascending: false })
-                  .limit(1)
-                if (nextTasks && nextTasks.length > 0) {
-                  await supabase.from('tasks').update({ is_deleted: true }).eq('id', nextTasks[0].id)
-                }
-              }
-              await supabase.from('tasks').update({ is_completed: false, completed_at: null }).eq('id', completedTask.id)
-              queryClient.invalidateQueries({ queryKey: ['tasks'] })
-              queryClient.invalidateQueries({ queryKey: ['subtasks'] })
-            },
-          },
-        })
-      }
-    },
+    onError: error => { if (error instanceof RecurrenceInsertError) showRecurrenceRetry(error) },
+    onSettled: () => invalidateTasks(queryClient),
   })
 }
 
 export function useDeleteTask() {
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   return useMutation({
-    mutationFn: async (id: string) => {
-      // Fetch the task first so we can show its title and undo
-      const { data: taskData } = await supabase.from('tasks').select('title').eq('id', id).single()
-
-      const { error } = await supabase
-        .from('tasks')
-        .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-        .eq('id', id)
-
-      if (error) throw error
-      return { id, title: (taskData as any)?.title || 'Task' }
-    },
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
-
+    mutationFn: (id: string) => mutateTask(id, () => taskMutations.remove(id)),
+    onSuccess: deleted => {
       toast('Task deleted', {
-        description: result.title,
+        description: deleted.title,
         action: {
           label: 'Undo',
           onClick: async () => {
-            await supabase.from('tasks').update({ is_deleted: false, deleted_at: null }).eq('id', result.id)
-            queryClient.invalidateQueries({ queryKey: ['tasks'] })
+            try {
+              await requireCurrentAccount(user?.id)
+              await mutateTask(deleted.id, () => taskMutations.restore(deleted))
+            } catch (error) { toast.error(errorMessage(error)) }
+            finally { await invalidateTasks(queryClient) }
           },
         },
       })
     },
+    onSettled: () => invalidateTasks(queryClient),
   })
 }
 
@@ -309,15 +297,12 @@ export function useReorderTasks() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (tasks: { id: string; position: number }[]) => {
-      // Update positions in batch
-      const updates = tasks.map(({ id, position }) =>
-        supabase.from('tasks').update({ position }).eq('id', id)
-      )
-      await Promise.all(updates)
+      const results = await Promise.allSettled(tasks.map(task => mutateTask(task.id, () => taskMutations.update(task))))
+      const failed = results.find(result => result.status === 'rejected')
+      if (failed?.status === 'rejected') throw new Error(`Some task positions could not be saved. ${errorMessage(failed.reason)}`)
+      return results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
-    },
+    onSettled: () => invalidateTasks(queryClient),
   })
 }
 
