@@ -46,4 +46,4 @@ jobs:
             build CODE_SIGNING_ALLOWED=NO
 
       # Use Xcode Organizer for the first signed, reviewed TestFlight build.
-      # See docs/iphone-beta-2026-09-14.md before adding automated signing/upload.
+      # Add automated signing and upload only after a manual build has been reviewed.
